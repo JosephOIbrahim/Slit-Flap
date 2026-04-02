@@ -92,10 +92,11 @@ function FlapChar({ char, size=104, dim, flipping, delay=0 }) {
   );
 }
 
-function SplitFlapName({ text, shipped, flipping }) {
+function SplitFlapName({ text, shipped, flipping, size=104, align="left" }) {
+  const justifyMap = { left:"flex-start", center:"center", right:"flex-end" };
   return (
-    <div style={{ display:"flex", gap:"3px", overflow:"hidden", padding:"4px 0" }}>
-      {(text||"").toUpperCase().split("").map((ch,i) => <FlapChar key={i} char={ch} dim={shipped} flipping={flipping} delay={i*30} />)}
+    <div style={{ display:"flex", gap:"3px", overflow:"hidden", padding:"4px 0", justifyContent:justifyMap[align]||"flex-start" }}>
+      {(text||"").toUpperCase().split("").map((ch,i) => <FlapChar key={i} char={ch} size={size} dim={shipped} flipping={flipping} delay={i*30} />)}
     </div>
   );
 }
@@ -252,7 +253,7 @@ function NowLine() {
 }
 
 // ─── Project Row ─────────────────────────────────────────────
-function ProjectRow({ project, onUpdate, onDelete, open, onToggle, showTime, isNextUp }) {
+function ProjectRow({ project, onUpdate, onDelete, open, onToggle, showTime, isNextUp, flapSize=104, flapAlign="left" }) {
   const shipped = project.status === "SHIPPED";
   const [flipping, setFlipping] = useState(false);
   const triggerFlip = () => { setFlipping(true); setTimeout(()=>setFlipping(false), 400); };
@@ -283,7 +284,7 @@ function ProjectRow({ project, onUpdate, onDelete, open, onToggle, showTime, isN
           </div>
           <button onClick={cycleStatus} style={{ background:"transparent", border:"none", fontFamily:MONO, fontSize:"9px", fontWeight:600, color:statusColor(project.status), letterSpacing:"0.1em", cursor:"pointer" }}>{project.status}</button>
         </div>
-        <div style={{padding:"4px 0"}}><SplitFlapName text={project.name} shipped={shipped} flipping={flipping} /></div>
+        <div style={{padding:"4px 0"}}><SplitFlapName text={project.name} shipped={shipped} flipping={flipping} size={flapSize} align={flapAlign} /></div>
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", minHeight:"12px" }}>
           {next ? <span style={sys("9px","#3a3a3a",{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"})}>{next}</span> : <span />}
           {(project.of||0) > 0 && <Progress mile={project.mile} of={project.of} />}
@@ -304,6 +305,8 @@ function Departures() {
   const [animKey, setAnimKey] = useState(0);
   const [showRecap, setShowRecap] = useState(false);
   const [sessionMins, setSessionMins] = useState(0);
+  const [flapSize, setFlapSize] = useState(104);
+  const [flapAlign, setFlapAlign] = useState("left");
   const prevFilter = useRef(filter);
 
   // Load projects from API
@@ -392,11 +395,25 @@ function Departures() {
               <div style={{display:"flex",alignItems:"center",gap:"5px"}}><div style={{width:"5px",height:"5px",borderRadius:"50%",background:sessionColor(sessionMins),transition:"background 2s"}} /><span style={sys("7px","#333")}>{formatDuration(sessionMins)}</span></div>
             </div>
           </div>
-          <div style={{textAlign:"right"}}>
-            <div style={{fontFamily:MONO,fontSize:"18px",fontWeight:800,color:ACCENT,letterSpacing:"0.06em",lineHeight:1,fontVariantNumeric:"tabular-nums"}}>{time}</div>
-            <div style={sys("8px","#3a3a3a",{marginTop:"3px",letterSpacing:"0.06em"})}>{date}</div>
-            <div style={{display:"flex",gap:"0px",marginTop:"5px",justifyContent:"flex-end"}}>
-              {intervals.map(v=><button key={v} onClick={()=>setInterval_(v)} style={{background:"transparent",border:"none",fontFamily:MONO,fontSize:"6px",color:interval===v?ACCENT:"#1e1e1e",cursor:"pointer",padding:"1px 3px",lineHeight:1}}>{v<1?`.${String(v).split(".")[1]}`:"1s"}</button>)}
+          <div style={{display:"flex",alignItems:"flex-start",gap:"16px"}}>
+            {/* Font size & alignment controls */}
+            <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"4px",marginTop:"2px"}}>
+              <div style={{display:"flex",gap:"0px"}}>
+                <button onClick={()=>setFlapSize(s=>Math.max(32,s-8))} style={{background:"transparent",border:`1px solid #222`,borderRadius:"2px 0 0 2px",fontFamily:MONO,fontSize:"9px",fontWeight:700,color:"#444",cursor:"pointer",padding:"2px 7px",lineHeight:1}}
+                  onMouseEnter={e=>{e.currentTarget.style.borderColor=ACCENT;e.currentTarget.style.color=ACCENT}} onMouseLeave={e=>{e.currentTarget.style.borderColor="#222";e.currentTarget.style.color="#444"}}>−</button>
+                <button onClick={()=>setFlapSize(s=>Math.min(160,s+8))} style={{background:"transparent",border:`1px solid #222`,borderLeft:"none",borderRadius:"0 2px 2px 0",fontFamily:MONO,fontSize:"9px",fontWeight:700,color:"#444",cursor:"pointer",padding:"2px 7px",lineHeight:1}}
+                  onMouseEnter={e=>{e.currentTarget.style.borderColor=ACCENT;e.currentTarget.style.color=ACCENT}} onMouseLeave={e=>{e.currentTarget.style.borderColor="#222";e.currentTarget.style.color="#444"}}>+</button>
+              </div>
+              <div style={{display:"flex",gap:"0px"}}>
+                {[["left","L"],["center","C"],["right","R"]].map(([val,label])=><button key={val} onClick={()=>setFlapAlign(val)} style={{background:"transparent",border:`1px solid ${flapAlign===val?"#333":"#222"}`,borderLeft:val!=="left"?"none":undefined,borderRadius:val==="left"?"2px 0 0 2px":val==="right"?"0 2px 2px 0":"0",fontFamily:MONO,fontSize:"7px",fontWeight:flapAlign===val?700:400,color:flapAlign===val?ACCENT:"#333",cursor:"pointer",padding:"2px 6px",lineHeight:1}}>{label}</button>)}
+              </div>
+            </div>
+            <div style={{textAlign:"right"}}>
+              <div style={{fontFamily:MONO,fontSize:"18px",fontWeight:800,color:ACCENT,letterSpacing:"0.06em",lineHeight:1,fontVariantNumeric:"tabular-nums"}}>{time}</div>
+              <div style={sys("8px","#3a3a3a",{marginTop:"3px",letterSpacing:"0.06em"})}>{date}</div>
+              <div style={{display:"flex",gap:"0px",marginTop:"5px",justifyContent:"flex-end"}}>
+                {intervals.map(v=><button key={v} onClick={()=>setInterval_(v)} style={{background:"transparent",border:"none",fontFamily:MONO,fontSize:"6px",color:interval===v?ACCENT:"#1e1e1e",cursor:"pointer",padding:"1px 3px",lineHeight:1}}>{v<1?`.${String(v).split(".")[1]}`:"1s"}</button>)}
+              </div>
             </div>
           </div>
         </div>
@@ -415,15 +432,15 @@ function Departures() {
             if (item.type==="now") return <NowLine key="now" />;
             if (item.type==="event") return <div key={item.data.id} className="arrive" style={{animationDelay:`${i*interval}s`,padding:"0 12px"}}><EventRow event={item.data} /></div>;
             if (item.type==="email") return <div key={item.data.id} className="arrive" style={{animationDelay:`${i*interval}s`,padding:"0 12px"}}><EmailRow email={item.data} /></div>;
-            if (item.type==="project") return <div key={`${item.data.id}-${animKey}`} className="arrive" style={{animationDelay:`${i*interval}s`,padding:"0 12px"}}><ProjectRow project={item.data} onUpdate={update} onDelete={remove} open={openId===item.data.id} onToggle={()=>setOpenId(openId===item.data.id?null:item.data.id)} showTime isNextUp={item.data.isNextUp} /></div>;
+            if (item.type==="project") return <div key={`${item.data.id}-${animKey}`} className="arrive" style={{animationDelay:`${i*interval}s`,padding:"0 12px"}}><ProjectRow project={item.data} onUpdate={update} onDelete={remove} open={openId===item.data.id} onToggle={()=>setOpenId(openId===item.data.id?null:item.data.id)} showTime isNextUp={item.data.isNextUp} flapSize={flapSize} flapAlign={flapAlign} /></div>;
             return null;
           })}
           {unscheduled.length>0 && <>
             <div style={{padding:"12px 24px 4px"}}><span style={sys("7px","#252525",{letterSpacing:"0.14em",textTransform:"uppercase"})}>No time blocked</span></div>
-            {unscheduled.map((p,i) => <div key={`${p.id}-${animKey}`} className="arrive" style={{animationDelay:`${(todayTimeline.length+i)*interval}s`,padding:"0 12px"}}><ProjectRow project={p} onUpdate={update} onDelete={remove} open={openId===p.id} onToggle={()=>setOpenId(openId===p.id?null:p.id)} showTime={false} isNextUp={p.isNextUp} /></div>)}
+            {unscheduled.map((p,i) => <div key={`${p.id}-${animKey}`} className="arrive" style={{animationDelay:`${(todayTimeline.length+i)*interval}s`,padding:"0 12px"}}><ProjectRow project={p} onUpdate={update} onDelete={remove} open={openId===p.id} onToggle={()=>setOpenId(openId===p.id?null:p.id)} showTime={false} isNextUp={p.isNextUp} flapSize={flapSize} flapAlign={flapAlign} /></div>)}
           </>}
         </> : <>
-          {filtered.map((p,i) => <div key={`${p.id}-${animKey}`} className="arrive" style={{animationDelay:`${i*interval}s`,padding:"0 12px"}}><ProjectRow project={p} onUpdate={update} onDelete={remove} open={openId===p.id} onToggle={()=>setOpenId(openId===p.id?null:p.id)} showTime={false} isNextUp={p.isNextUp} /></div>)}
+          {filtered.map((p,i) => <div key={`${p.id}-${animKey}`} className="arrive" style={{animationDelay:`${i*interval}s`,padding:"0 12px"}}><ProjectRow project={p} onUpdate={update} onDelete={remove} open={openId===p.id} onToggle={()=>setOpenId(openId===p.id?null:p.id)} showTime={false} isNextUp={p.isNextUp} flapSize={flapSize} flapAlign={flapAlign} /></div>)}
         </>}
         {!isToday && filtered.length===0 && <div style={{padding:"60px 24px",textAlign:"center"}}><div style={sys("11px","#222",{letterSpacing:"0.12em"})}>{filter==="ALL"?"NO ACTIVE DEPARTURES":`NO ${filter} PROJECTS`}</div></div>}
       </div>
