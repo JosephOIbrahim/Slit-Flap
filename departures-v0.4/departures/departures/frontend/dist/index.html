@@ -78,6 +78,37 @@ function formatDuration(mins) {
 const inp = { background:"#111", border:"1px solid #252525", color:WHITE, fontFamily:MONO, fontSize:"11px", padding:"7px 10px", letterSpacing:"0.02em", outline:"none", width:"100%", boxSizing:"border-box", borderRadius:"2px" };
 const SWATCHES = ["","#1a1714","#1a1318","#141a18","#18141a","#1a1910","#101820","#201414","#142014","#141420","#251a12","#121a25","#1a1225"];
 
+// ─── Weather Helpers ─────────────────────────────────────────
+const WMO_DESCRIPTIONS = {
+  0:"Clear",1:"Mostly Clear",2:"Partly Cloudy",3:"Overcast",
+  45:"Fog",48:"Rime Fog",51:"Light Drizzle",53:"Drizzle",55:"Heavy Drizzle",
+  61:"Light Rain",63:"Rain",65:"Heavy Rain",66:"Freezing Rain",67:"Heavy Freezing Rain",
+  71:"Light Snow",73:"Snow",75:"Heavy Snow",77:"Snow Grains",
+  80:"Light Showers",81:"Showers",82:"Heavy Showers",
+  85:"Snow Showers",86:"Heavy Snow Showers",95:"Thunderstorm",96:"Hail Storm",99:"Heavy Hail"
+};
+const WMO_ICONS = {
+  0:"\u2600",1:"\u26C5",2:"\u26C5",3:"\u2601",45:"\uD83C\uDF2B",48:"\uD83C\uDF2B",
+  51:"\uD83C\uDF27",53:"\uD83C\uDF27",55:"\uD83C\uDF27",61:"\uD83C\uDF27",63:"\uD83C\uDF27",65:"\uD83C\uDF27",
+  66:"\u2744",67:"\u2744",71:"\u2744",73:"\u2744",75:"\u2744",77:"\u2744",
+  80:"\uD83C\uDF26",81:"\uD83C\uDF26",82:"\uD83C\uDF26",85:"\u2744",86:"\u2744",
+  95:"\u26A1",96:"\u26A1",99:"\u26A1"
+};
+
+async function fetchCityWeather(zip) {
+  try {
+    const geo = await fetch(`https://api.zippopotam.us/us/${zip}`).then(r => { if(!r.ok) throw new Error(); return r.json(); });
+    const place = geo.places[0];
+    const city = place["place name"];
+    const state = place["state abbreviation"];
+    const lat = parseFloat(place.latitude);
+    const lon = parseFloat(place.longitude);
+    const weather = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&temperature_unit=fahrenheit`).then(r=>r.json());
+    const cw = weather.current_weather;
+    return { city: `${city}, ${state}`, temp: Math.round(cw.temperature), code: cw.weathercode, desc: WMO_DESCRIPTIONS[cw.weathercode]||"", icon: WMO_ICONS[cw.weathercode]||"" };
+  } catch(e) { return null; }
+}
+
 // ─── Split Flap ──────────────────────────────────────────────
 function FlapChar({ char, size=104, dim, flipping, delay=0 }) {
   const w = size * 0.7, h = size * 1.08;
@@ -158,14 +189,14 @@ function LogPanel({ projectId, log }) {
   };
   return (
     <div style={{ padding:"0 24px 16px", background:"#111" }} onClick={e=>e.stopPropagation()}>
-      <div style={{ display:"flex", gap:"6px", marginBottom:"8px" }}>
-        <input value={text} onChange={e=>setText(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")addEntry()}} placeholder="Log a note..." style={{...inp,flex:1}} />
-        <button onClick={addEntry} style={{...inp,width:"auto",cursor:"pointer",color:ACCENT,padding:"7px 14px"}}>+</button>
+      <div style={{ display:"flex", gap:"6px", marginBottom:"10px" }}>
+        <input value={text} onChange={e=>setText(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")addEntry()}} placeholder="Log a note..." style={{...inp,flex:1,fontSize:"13px",padding:"9px 12px"}} />
+        <button onClick={addEntry} style={{...inp,width:"auto",cursor:"pointer",color:ACCENT,padding:"9px 14px",fontSize:"13px"}}>+</button>
       </div>
-      {entries.length > 0 && <div style={{ maxHeight:"120px", overflowY:"auto" }}>
-        {entries.slice(0,8).map((entry,i) => <div key={i} style={{ display:"flex", gap:"10px", padding:"3px 0" }}>
-          <span style={sys("7px","#333",{minWidth:"36px",flexShrink:0})}>{relTime(entry.at)}</span>
-          <span style={sys("8px","#444")}>{entry.text}</span>
+      {entries.length > 0 && <div style={{ maxHeight:"180px", overflowY:"auto" }}>
+        {entries.slice(0,8).map((entry,i) => <div key={i} style={{ display:"flex", gap:"12px", padding:"5px 0" }}>
+          <span style={sys("10px","#444",{minWidth:"44px",flexShrink:0})}>{relTime(entry.at)}</span>
+          <span style={sys("14px","#c8c4bc",{lineHeight:1.4})}>{entry.text}</span>
         </div>)}
       </div>}
     </div>
@@ -307,6 +338,10 @@ function Departures() {
   const [sessionMins, setSessionMins] = useState(0);
   const [flapSize, setFlapSize] = useState(104);
   const [flapAlign, setFlapAlign] = useState("left");
+  const [zipCode, setZipCode] = useState(() => localStorage.getItem("departures_zip") || "");
+  const [cityInfo, setCityInfo] = useState(null);
+  const [editingZip, setEditingZip] = useState(false);
+  const [zipDraft, setZipDraft] = useState("");
   const prevFilter = useRef(filter);
 
   // Load projects from API
@@ -326,6 +361,21 @@ function Departures() {
     api.session().then(s => setSessionMins(s.elapsedMinutes));
     return () => clearInterval(t);
   }, []);
+
+  // City/weather lookup
+  useEffect(() => {
+    if (zipCode && /^\d{5}$/.test(zipCode)) {
+      fetchCityWeather(zipCode).then(info => { if(info) setCityInfo(info); });
+      const wt = setInterval(() => { fetchCityWeather(zipCode).then(info => { if(info) setCityInfo(info); }); }, 600000);
+      return () => clearInterval(wt);
+    }
+  }, [zipCode]);
+
+  const submitZip = (z) => {
+    const clean = z.trim();
+    if (/^\d{5}$/.test(clean)) { setZipCode(clean); localStorage.setItem("departures_zip", clean); }
+    setEditingZip(false);
+  };
 
   // Animation triggers
   useEffect(() => { if (prevFilter.current !== filter) { setAnimKey(k=>k+1); prevFilter.current = filter; } }, [filter]);
@@ -375,7 +425,7 @@ function Departures() {
   // Clock
   const [now, setNow] = useState(new Date());
   useEffect(() => { const t = setInterval(()=>setNow(new Date()), 1000); return ()=>clearInterval(t); }, []);
-  const time = now.toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit",hour12:false});
+  const time = now.toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit",hour12:true});
   const date = now.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"}).toUpperCase();
 
   const intervals = [0.06, 0.12, 0.25, 0.5, 1.0];
@@ -410,6 +460,28 @@ function Departures() {
             </div>
             <div style={{textAlign:"right"}}>
               <div style={{fontFamily:MONO,fontSize:"18px",fontWeight:800,color:ACCENT,letterSpacing:"0.06em",lineHeight:1,fontVariantNumeric:"tabular-nums"}}>{time}</div>
+              {/* City / Weather */}
+              {cityInfo ? (
+                <div style={{display:"flex",alignItems:"center",gap:"6px",justifyContent:"flex-end",marginTop:"4px",cursor:"pointer"}} onClick={()=>{setZipDraft(zipCode);setEditingZip(true)}}>
+                  <span style={sys("9px",WHITE,{fontWeight:600})}>{cityInfo.city}</span>
+                  <span style={{fontSize:"12px"}}>{cityInfo.icon}</span>
+                  <span style={sys("9px",ACCENT,{fontWeight:700})}>{cityInfo.temp}°F</span>
+                  <span style={sys("7px","#444")}>{cityInfo.desc}</span>
+                </div>
+              ) : (
+                <div style={{marginTop:"4px"}}>
+                  {!editingZip ? (
+                    <button onClick={()=>{setZipDraft(zipCode);setEditingZip(true)}} style={{background:"transparent",border:`1px dashed #222`,borderRadius:"2px",fontFamily:MONO,fontSize:"8px",color:"#333",cursor:"pointer",padding:"3px 10px",letterSpacing:"0.08em"}}
+                      onMouseEnter={e=>{e.currentTarget.style.borderColor=ACCENT;e.currentTarget.style.color=ACCENT}} onMouseLeave={e=>{e.currentTarget.style.borderColor="#222";e.currentTarget.style.color="#333"}}>+ ZIP CODE</button>
+                  ) : null}
+                </div>
+              )}
+              {editingZip && (
+                <div style={{display:"flex",gap:"4px",justifyContent:"flex-end",marginTop:"4px"}}>
+                  <input autoFocus value={zipDraft} onChange={e=>setZipDraft(e.target.value.replace(/\D/g,"").slice(0,5))} onKeyDown={e=>{if(e.key==="Enter")submitZip(zipDraft);if(e.key==="Escape")setEditingZip(false)}} placeholder="ZIP" maxLength={5} style={{background:"#111",border:`1px solid #333`,borderRadius:"2px",color:WHITE,fontFamily:MONO,fontSize:"10px",padding:"3px 8px",width:"60px",outline:"none",textAlign:"center"}} />
+                  <button onClick={()=>submitZip(zipDraft)} style={{background:"transparent",border:`1px solid #333`,borderRadius:"2px",fontFamily:MONO,fontSize:"8px",color:ACCENT,cursor:"pointer",padding:"3px 8px"}}>OK</button>
+                </div>
+              )}
               <div style={sys("8px","#3a3a3a",{marginTop:"3px",letterSpacing:"0.06em"})}>{date}</div>
               <div style={{display:"flex",gap:"0px",marginTop:"5px",justifyContent:"flex-end"}}>
                 {intervals.map(v=><button key={v} onClick={()=>setInterval_(v)} style={{background:"transparent",border:"none",fontFamily:MONO,fontSize:"6px",color:interval===v?ACCENT:"#1e1e1e",cursor:"pointer",padding:"1px 3px",lineHeight:1}}>{v<1?`.${String(v).split(".")[1]}`:"1s"}</button>)}
@@ -420,9 +492,9 @@ function Departures() {
       </div>
 
       {/* Filters */}
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"6px 24px",borderBottom:`1px solid ${FAINT}`}}>
-        <div style={{display:"flex"}}>{filters.map(f=><button key={f} onClick={()=>setFilter(f)} style={{background:"transparent",border:"none",fontFamily:MONO,fontSize:"8px",fontWeight:filter===f?700:400,color:filter===f?(f==="TODAY"?ACCENT:WHITE):"#2a2a2a",letterSpacing:"0.1em",padding:"4px 10px",cursor:"pointer"}}>{f}</button>)}</div>
-        <span style={sys("8px","#222")}>{isToday?todayTimeline.filter(t=>t.type!=="now").length:filtered.length}</span>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 24px",borderBottom:`1px solid ${FAINT}`}}>
+        <div style={{display:"flex",gap:"2px"}}>{filters.map(f=><button key={f} onClick={()=>setFilter(f)} style={{background:"transparent",border:"none",fontFamily:MONO,fontSize:"15px",fontWeight:filter===f?700:400,color:filter===f?(f==="TODAY"?ACCENT:WHITE):"#2a2a2a",letterSpacing:"0.08em",padding:"6px 12px",cursor:"pointer",transition:"color 0.2s"}}>{f}</button>)}</div>
+        <span style={sys("13px","#333",{fontWeight:600})}>{isToday?todayTimeline.filter(t=>t.type!=="now").length:filtered.length}</span>
       </div>
 
       {/* Board */}
