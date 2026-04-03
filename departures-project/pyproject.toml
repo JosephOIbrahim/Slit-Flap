@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "departures"
+version = "0.4.0"
+description = "A project manager that looks like a train station departure board"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.11"
+authors = [
+    {name = "Joseph Ibrahim", email = "joe@josephibrahim.com"}
+]
+keywords = ["project-manager", "departure-board", "split-flap", "adhd", "usd"]
+
+dependencies = [
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "aiosqlite>=0.19.0",
+    "click>=8.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "httpx>=0.25.0",
+]
+usd = [
+    # Future: USD composition layer
+    # Requires Python 3.12 + USD 26.03
+]
+
+[project.scripts]
+departures = "departures.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["departures*"]
