@@ -8,7 +8,6 @@ import { useState, useEffect, useRef } from "react";
 // empty states designed, invisible details resolved.
 // ─────────────────────────────────────────────────────────────
 
-const STORAGE_KEY = "departures-v5";
 const ACCENT = "#d4a012";
 const WHITE = "#e8e4de";
 const BG = "#141414";
@@ -31,25 +30,6 @@ const DOMAINS = ["VFX", "AI", "WEB", "MIX", "OPS", "FAM"];
 
 // ─── MOCK DATA ───────────────────────────────────────────────
 
-const SEED_PROJECTS = [
-  { id: "otto", name: "Otto OS", status: "ACTIVE", track: "01", domain: "AI", next: "WhatsApp integration + follow-up loop", mile: 1, of: 6, todayTime: "10:00" },
-  { id: "patents", name: "US Patents", status: "ACTIVE", track: "01", domain: "OPS", next: "File USD Cognitive Substrate patent", mile: 0, of: 3, todayTime: "14:00" },
-  { id: "use-products", name: "Use Your Products", status: "BLOCKED", track: "01", domain: "OPS", next: "Synapse + OTTO CLI + Comfy Agent", mile: 0, of: 4, todayTime: "" },
-  { id: "comfyui", name: "ComfyUI Agent", status: "SHIPPED", track: "02", domain: "AI", next: "Refactor + demo", mile: 1, of: 3, todayTime: "" },
-  { id: "synapse", name: "Synapse", status: "ACTIVE", track: "02", domain: "MIX", next: "Refactor for Houdini 21 + demo", mile: 0, of: 4, todayTime: "16:00" },
-  { id: "cog-sub", name: "USD Cog Substrate", status: "ROLLING", track: "02", domain: "AI", next: "General improvements", mile: 5, of: 8, todayTime: "" },
-  { id: "carwash", name: "CarWash Renderer", status: "QUEUED", track: "02", domain: "MIX", next: "Houdini GenAI render pipeline", mile: 0, of: 5, todayTime: "" },
-  { id: "translators", name: "Translators Game", status: "QUEUED", track: "03", domain: "MIX", next: "Game mechanics + intake pipeline", mile: 0, of: 5, todayTime: "" },
-  { id: "trellis", name: "Trellis-2", status: "ACTIVE", track: "03", domain: "MIX", next: "Lightweight USD export", mile: 1, of: 3, todayTime: "" },
-  { id: "td-asst", name: "TD Assistant", status: "QUEUED", track: "03", domain: "MIX", next: "Reimagine Synapse for TouchDesigner", mile: 0, of: 4, todayTime: "" },
-  { id: "rtx-remix", name: "ComfyUI RTX Remix", status: "QUEUED", track: "03", domain: "MIX", next: "", mile: 0, of: 0, todayTime: "" },
-  { id: "jaime", name: "jaimeibrahim.com", status: "QUEUED", track: "03", domain: "WEB", next: "Create MAINTENANCE.md", mile: 0, of: 2, todayTime: "" },
-  { id: "joe-site", name: "josephibrahim.com", status: "QUEUED", track: "03", domain: "WEB", next: "Add Houdini + UE work", mile: 0, of: 4, todayTime: "" },
-  { id: "conductor", name: "aiconductor.studio", status: "BLOCKED", track: "04", domain: "WEB", next: "Rebrand — no longer a conductor", mile: 0, of: 3, todayTime: "" },
-  { id: "departures", name: "Departures App", status: "ACTIVE", track: "03", domain: "WEB", next: "Iterate design + PWA", mile: 1, of: 5, todayTime: "11:00" },
-  { id: "isaac", name: "Isaac Sim LLM", status: "QUEUED", track: "04", domain: "AI", next: "USD Cog Substrate on robotics", mile: 0, of: 0, todayTime: "" },
-];
-
 // Mock calendar events (would come from Google Calendar MCP)
 const MOCK_EVENTS = [
   { id: "ev1", type: "event", time: "09:00", end: "09:30", name: "Morning standup", source: "Google Calendar" },
@@ -65,27 +45,6 @@ const MOCK_EMAILS = [
   { id: "em2", type: "email", time: "09:45", from: "Vercel", subject: "Deploy succeeded: jaimeibrahim.com", linkedProject: "jaime" },
   { id: "em3", type: "email", time: "12:20", from: "GitHub", subject: "New issue on Harlo: hippocampus decay test flaky", linkedProject: "cog-sub" },
 ];
-
-function makeSeed() {
-  const now = new Date();
-  const ages = { otto: 0.5, patents: 2, "use-products": 5, comfyui: 14, synapse: 1, "cog-sub": 0.2, carwash: 8, translators: 12, trellis: 3, "td-asst": 10, "rtx-remix": 20, jaime: 7, "joe-site": 15, conductor: 18, departures: 0, isaac: 25 };
-  return SEED_PROJECTS.map((s) => ({
-    ...s, deadline: "", bgColor: "", history: [],
-    lastTouched: new Date(now - (ages[s.id] || 5) * 86400000).toISOString(),
-    log: [],
-    createdAt: "2026-02-21T00:00:00Z", updatedAt: new Date().toISOString(),
-  }));
-}
-
-function newProject() {
-  return {
-    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-    name: "New Project", status: "QUEUED", track: "03", domain: "AI",
-    next: "", deadline: "", bgColor: "", mile: 0, of: 0, todayTime: "",
-    history: [], log: [], lastTouched: new Date().toISOString(),
-    createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-  };
-}
 
 // ─── NEXT UP SCORING ─────────────────────────────────────────
 function scoreProject(p) {
@@ -298,11 +257,19 @@ function ProjectRow({ project, onUpdate, onDelete, open, onToggle, showTime, isN
 
   const addLogEntry = (text) => {
     if (!text.trim()) return;
-    onUpdate({
-      ...project,
-      log: [...(project.log || []), { text, at: new Date().toISOString() }],
-      lastTouched: new Date().toISOString(),
-    });
+    fetch(`/api/projects/${project.id}/logs`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    })
+      .then(r => r.json())
+      .then(entry => {
+        onUpdate({
+          ...project,
+          log: [...(project.log || []), entry],
+          lastTouched: new Date().toISOString(),
+        });
+      });
   };
 
   return (
@@ -531,7 +498,7 @@ export default function Departures() {
   const [interval, setInterval_] = useState(0.12);
   const [animKey, setAnimKey] = useState(0);
   const [showRecap, setShowRecap] = useState(false);
-  const [sessionStart] = useState(() => Date.now());
+  const [sessionMins, setSessionMins] = useState(0);
   const prevFilter = useRef(filter);
 
   useEffect(() => {
@@ -564,19 +531,49 @@ export default function Departures() {
   }, []);
 
   useEffect(() => {
-    (async () => {
-      try { const r = await window.storage.get(STORAGE_KEY); if (r?.value) { const p = JSON.parse(r.value); if (p.length) { setProjects(p); setReady(true); return; } } } catch (_) {}
-      setProjects(makeSeed()); setReady(true);
-    })();
+    fetch('/api/projects')
+      .then(r => r.json())
+      .then(data => { setProjects(data); setReady(true); })
+      .catch(() => setReady(true));
   }, []);
 
-  useEffect(() => { if (!ready) return; window.storage.set(STORAGE_KEY, JSON.stringify(projects)).catch(() => {}); }, [projects, ready]);
+  useEffect(() => {
+    const fetchSession = () => fetch('/api/session').then(r => r.json()).then(d => setSessionMins(d.elapsedMinutes)).catch(() => {});
+    fetchSession();
+    const t = setInterval(fetchSession, 60000);
+    return () => clearInterval(t);
+  }, []);
+
   useEffect(() => { if (prevFilter.current !== filter) { setAnimKey((k) => k + 1); prevFilter.current = filter; } }, [filter]);
   useEffect(() => { if (ready) setAnimKey((k) => k + 1); }, [ready]);
 
-  const add = () => { const p = newProject(); setProjects((prev) => [p, ...prev]); setOpenId(p.id); };
-  const update = (p) => setProjects((prev) => prev.map((x) => x.id === p.id ? { ...p, updatedAt: new Date().toISOString() } : x));
-  const remove = (id) => { setProjects((prev) => prev.filter((x) => x.id !== id)); if (openId === id) setOpenId(null); };
+  const add = () => {
+    fetch('/api/projects', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'New Project', status: 'QUEUED', track: '03', domain: 'AI' }),
+    })
+      .then(r => r.json())
+      .then(({ id }) => {
+        fetch('/api/projects').then(r => r.json()).then(data => {
+          setProjects(data);
+          setOpenId(id);
+        });
+      });
+  };
+  const update = (p) => {
+    setProjects(prev => prev.map(x => x.id === p.id ? { ...p, updatedAt: new Date().toISOString() } : x));
+    fetch(`/api/projects/${p.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(p),
+    });
+  };
+  const remove = (id) => {
+    setProjects(prev => prev.filter(x => x.id !== id));
+    if (openId === id) setOpenId(null);
+    fetch(`/api/projects/${id}`, { method: 'DELETE' });
+  };
 
   const isToday = filter === "TODAY";
 
@@ -631,8 +628,6 @@ export default function Departures() {
   useEffect(() => { const t = window.setInterval(() => setNow(new Date()), 1000); return () => window.clearInterval(t); }, []);
   const time = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
   const date = now.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }).toUpperCase();
-  const sessionMins = Math.floor((Date.now() - sessionStart) / 60000);
-
   // NEXT UP — highest scoring active project
   const nextUpId = (() => {
     const scorable = projects.filter((p) => p.status !== "SHIPPED" && p.status !== "QUEUED");

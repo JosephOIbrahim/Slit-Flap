@@ -34,5 +34,8 @@ usd = [
 [project.scripts]
 departures = "departures.cli:main"
 
+[tool.setuptools.package-data]
+departures = ["frontend/dist/**/*"]
+
 [tool.setuptools.packages.find]
 include = ["departures*"]
