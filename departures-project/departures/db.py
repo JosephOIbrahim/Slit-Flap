@@ -95,6 +95,22 @@ CREATE TABLE IF NOT EXISTS sessions (
     projects_touched TEXT DEFAULT '[]',
     summary TEXT DEFAULT ''
 );
+
+CREATE TABLE IF NOT EXISTS events (
+    id TEXT PRIMARY KEY,
+    time TEXT NOT NULL,
+    end_time TEXT DEFAULT '',
+    name TEXT NOT NULL,
+    source TEXT DEFAULT '',
+    linked_project TEXT DEFAULT '',
+    created_at TEXT,
+    updated_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT DEFAULT ''
+);
 """
 
 # ── Seed data ─────────────────────────────────────────────────────
@@ -116,6 +132,14 @@ SEEDS = [
     ("conductor", "aiconductor.studio", "BLOCKED", "04", "WEB", "Rebrand — no longer a conductor", 0, 3, ""),
     ("departures", "Departures App", "ACTIVE", "03", "WEB", "Iterate design + PWA", 1, 5, "11:00"),
     ("isaac", "Isaac Sim LLM", "QUEUED", "04", "AI", "USD Cog Substrate on robotics", 0, 0, ""),
+]
+
+SEED_EVENTS = [
+    ("ev1", "09:00", "09:30", "Morning standup", "Google Calendar", ""),
+    ("ev2", "11:30", "12:00", "Dylan basketball pickup", "Family", ""),
+    ("ev3", "13:00", "13:30", "Lunch — skip if deep in flow", "Google Calendar", ""),
+    ("ev4", "15:00", "15:30", "Patent attorney call", "Google Calendar", "patents"),
+    ("ev5", "17:30", "18:00", "Dog walk + debrief", "Family", ""),
 ]
 
 _SEED_AGES = {
@@ -143,6 +167,16 @@ async def _insert_seeds(db: aiosqlite.Connection) -> None:
             (sid, name, status, track, domain, next_action,
              mile, mile_total, today_time, last_touched, created_at, updated_at),
         )
+    # Seed events
+    now_str = now.isoformat()
+    for eid, time, end_time, name, source, linked in SEED_EVENTS:
+        await db.execute(
+            "INSERT OR IGNORE INTO events (id, time, end_time, name, source, linked_project, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (eid, time, end_time, name, source, linked, now_str, now_str),
+        )
+    # Seed default settings
+    for key, val in [("zip", ""), ("fontSize", "104"), ("alignment", "left")]:
+        await db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, val))
     await db.commit()
 
 
@@ -157,6 +191,20 @@ async def init_db() -> None:
         row = await cursor.fetchone()
         if row[0] == 0:
             await _insert_seeds(db)
+        else:
+            # Ensure events and settings are seeded even if projects already exist
+            now_str = _now()
+            ev_cursor = await db.execute("SELECT COUNT(*) FROM events")
+            ev_row = await ev_cursor.fetchone()
+            if ev_row[0] == 0:
+                for eid, time, end_time, name, source, linked in SEED_EVENTS:
+                    await db.execute(
+                        "INSERT OR IGNORE INTO events (id, time, end_time, name, source, linked_project, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        (eid, time, end_time, name, source, linked, now_str, now_str),
+                    )
+            for key, val in [("zip", ""), ("fontSize", "104"), ("alignment", "left")]:
+                await db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, val))
+            await db.commit()
     finally:
         await db.close()
 
@@ -165,10 +213,13 @@ async def seed_db() -> None:
     """Drop all data and re-insert 16 seed projects."""
     db = await _conn()
     try:
+        await db.executescript(_SCHEMA)
         await db.executescript("""
             DELETE FROM logs;
             DELETE FROM notes;
             DELETE FROM sessions;
+            DELETE FROM events;
+            DELETE FROM settings;
             DELETE FROM projects;
         """)
         await _insert_seeds(db)
@@ -381,5 +432,151 @@ async def get_recap() -> dict:
             "projects": projects,
             "logEntries": log_count,
         }
+    finally:
+        await db.close()
+
+
+# ── Event column ↔ camelCase maps ────────────────────────────────
+
+_EVENT_COL_TO_CAMEL = {
+    "end_time": "endTime",
+    "linked_project": "linkedProject",
+    "created_at": "createdAt",
+    "updated_at": "updatedAt",
+}
+
+_EVENT_CAMEL_TO_COL = {v: k for k, v in _EVENT_COL_TO_CAMEL.items()}
+
+_EVENT_COLS = [
+    "id", "time", "end_time", "name", "source",
+    "linked_project", "created_at", "updated_at",
+]
+
+
+def _event_to_camel(col: str) -> str:
+    return _EVENT_COL_TO_CAMEL.get(col, col)
+
+
+def _event_to_col(key: str) -> str:
+    return _EVENT_CAMEL_TO_COL.get(key, key)
+
+
+# ── Event CRUD ───────────────────────────────────────────────────
+
+async def list_events() -> list[dict]:
+    """Return all events, camelCase keys."""
+    db = await _conn()
+    try:
+        cursor = await db.execute("SELECT * FROM events ORDER BY time")
+        rows = await cursor.fetchall()
+        events = []
+        for row in rows:
+            r = dict(row)
+            out = {}
+            for col in _EVENT_COLS:
+                out[_event_to_camel(col)] = r[col]
+            events.append(out)
+        return events
+    finally:
+        await db.close()
+
+
+async def create_event(data: dict) -> dict:
+    """Create event. Returns {id}. Accepts: time, endTime, name, source, linkedProject."""
+    now = _now()
+    eid = data.get("id") or (
+        hex(int(datetime.now(timezone.utc).timestamp() * 1000))[2:]
+        + uuid.uuid4().hex[:6]
+    )
+    db = await _conn()
+    try:
+        vals = {
+            "id": eid,
+            "time": data.get("time", ""),
+            "end_time": data.get("endTime", ""),
+            "name": data.get("name", ""),
+            "source": data.get("source", ""),
+            "linked_project": data.get("linkedProject", ""),
+            "created_at": now,
+            "updated_at": now,
+        }
+        cols = ", ".join(vals.keys())
+        placeholders = ", ".join("?" for _ in vals)
+        await db.execute(
+            f"INSERT INTO events ({cols}) VALUES ({placeholders})",
+            tuple(vals.values()),
+        )
+        await db.commit()
+        return {"id": eid}
+    finally:
+        await db.close()
+
+
+async def update_event(eid: str, data: dict) -> dict:
+    """Partial update. Returns {id, updated: True}. Maps camelCase→snake_case."""
+    now = _now()
+    db = await _conn()
+    try:
+        sets = []
+        params = []
+        for key, value in data.items():
+            col = _event_to_col(key)
+            if col in _EVENT_COLS and col not in ("id", "created_at"):
+                sets.append(f"{col} = ?")
+                params.append(value)
+        # Always update timestamp
+        if "updated_at" not in [s.split(" = ")[0] for s in sets]:
+            sets.append("updated_at = ?")
+            params.append(now)
+
+        params.append(eid)
+        await db.execute(
+            f"UPDATE events SET {', '.join(sets)} WHERE id = ?",
+            params,
+        )
+        await db.commit()
+        return {"id": eid, "updated": True}
+    finally:
+        await db.close()
+
+
+async def delete_event(eid: str) -> dict:
+    """Delete event. Returns {id, deleted: True}."""
+    db = await _conn()
+    try:
+        await db.execute("DELETE FROM events WHERE id = ?", (eid,))
+        await db.commit()
+        return {"id": eid, "deleted": True}
+    finally:
+        await db.close()
+
+
+# ── Settings CRUD ────────────────────────────────────────────────
+
+async def get_settings() -> dict:
+    """Return all settings as {key: value} dict."""
+    db = await _conn()
+    try:
+        cursor = await db.execute("SELECT key, value FROM settings")
+        rows = await cursor.fetchall()
+        return {r["key"]: r["value"] for r in rows}
+    finally:
+        await db.close()
+
+
+async def update_settings(data: dict) -> dict:
+    """Update settings from partial dict. Returns full settings."""
+    db = await _conn()
+    try:
+        for key, value in data.items():
+            await db.execute(
+                "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (key, str(value)),
+            )
+        await db.commit()
+        # Return full settings
+        cursor = await db.execute("SELECT key, value FROM settings")
+        rows = await cursor.fetchall()
+        return {r["key"]: r["value"] for r in rows}
     finally:
         await db.close()

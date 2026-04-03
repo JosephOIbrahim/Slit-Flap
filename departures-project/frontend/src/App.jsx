@@ -1,11 +1,14 @@
 import { useState, useEffect, useRef } from "react";
 
 // ─────────────────────────────────────────────────────────────
-// DEPARTURES v0.3.1 — DESIGN TIGHTENING PASS
+// DEPARTURES v0.4 — DESIGN TIGHTENING PASS + FEATURES
 //
 // Pentagram principles applied: earned space, shout/whisper,
 // one grid, color as information, motion as punctuation,
 // empty states designed, invisible details resolved.
+//
+// v0.4 adds: editable events, weather widget, font size +
+// alignment controls. All controls whisper-volume (7-9px).
 // ─────────────────────────────────────────────────────────────
 
 const ACCENT = "#d4a012";
@@ -28,16 +31,31 @@ const STATUSES = ["QUEUED", "ACTIVE", "ROLLING", "BLOCKED", "REVIEW", "SHIPPED"]
 const TRACKS = ["01", "02", "03", "04", "05"];
 const DOMAINS = ["VFX", "AI", "WEB", "MIX", "OPS", "FAM"];
 
-// ─── MOCK DATA ───────────────────────────────────────────────
-
-// Mock calendar events (would come from Google Calendar MCP)
-const MOCK_EVENTS = [
-  { id: "ev1", type: "event", time: "09:00", end: "09:30", name: "Morning standup", source: "Google Calendar" },
-  { id: "ev2", type: "event", time: "11:30", end: "12:00", name: "Dylan basketball pickup", source: "Family" },
-  { id: "ev3", type: "event", time: "13:00", end: "13:30", name: "Lunch — skip if deep in flow", source: "Google Calendar" },
-  { id: "ev4", type: "event", time: "15:00", end: "15:30", name: "Patent attorney call", source: "Google Calendar", linkedProject: "patents" },
-  { id: "ev5", type: "event", time: "17:30", end: "18:00", name: "Dog walk + debrief", source: "Family" },
+const FONT_SIZES = [
+  { label: "S", value: 64 },
+  { label: "M", value: 104 },
+  { label: "L", value: 140 },
 ];
+
+// ─── WEATHER ─────────────────────────────────────────────────
+
+const WMO_DESC = {0:"Clear",1:"Mostly Clear",2:"Partly Cloudy",3:"Overcast",45:"Fog",48:"Rime Fog",51:"Lt Drizzle",53:"Drizzle",55:"Hvy Drizzle",61:"Lt Rain",63:"Rain",65:"Hvy Rain",71:"Lt Snow",73:"Snow",75:"Hvy Snow",80:"Showers",95:"Thunderstorm"};
+
+async function fetchWeather(zip) {
+  if (!zip || zip.length < 5) return null;
+  try {
+    const geo = await fetch(`https://api.zippopotam.us/us/${zip}`).then(r => { if(!r.ok) throw null; return r.json(); });
+    const place = geo.places[0];
+    const city = place["place name"];
+    const state = place["state abbreviation"];
+    const lat = parseFloat(place.latitude);
+    const lon = parseFloat(place.longitude);
+    const wx = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&temperature_unit=fahrenheit`).then(r=>r.json());
+    return { city: `${city}, ${state}`, temp: Math.round(wx.current_weather.temperature), desc: WMO_DESC[wx.current_weather.weathercode] || "" };
+  } catch { return null; }
+}
+
+// ─── MOCK DATA ───────────────────────────────────────────────
 
 // Mock emails (would come from Gmail MCP)
 const MOCK_EMAILS = [
@@ -152,14 +170,16 @@ function FlapChar({ char, size, dim, flipping, delay }) {
   );
 }
 
-function SplitFlapName({ text, shipped, flipping }) {
+function SplitFlapName({ text, shipped, flipping, size = 104, align = "left" }) {
+  const justifyMap = { left: "flex-start", center: "center", right: "flex-end" };
   const chars = (text || "").toUpperCase().split("");
   return (
     <div style={{
       display: "flex", gap: "4px", overflow: "hidden", padding: "4px 0",
+      justifyContent: justifyMap[align] || "flex-start",
     }}>
       {chars.map((ch, i) => (
-        <FlapChar key={i} char={ch} size={104} dim={shipped} flipping={flipping} delay={i * 30} />
+        <FlapChar key={i} char={ch} size={size} dim={shipped} flipping={flipping} delay={i * 30} />
       ))}
     </div>
   );
@@ -175,6 +195,30 @@ const inp = {
 };
 
 const SWATCHES = ["", "#1a1714", "#1a1318", "#141a18", "#18141a", "#1a1910", "#101820", "#201414", "#142014", "#141420", "#251a12", "#121a25", "#1a1225"];
+
+// ─── EVENT EDIT PANEL ────────────────────────────────────────
+
+function EventEditPanel({ event, onUpdate, onDelete }) {
+  const u = (k, v) => onUpdate({ ...event, [k]: v });
+  return (
+    <div style={{ padding: "12px 24px", borderTop: `1px solid ${G4}`, background: G6 }} onClick={e => e.stopPropagation()}>
+      <div style={{ display: "grid", gridTemplateColumns: "60px 60px 1fr", gap: "8px", marginBottom: "8px" }}>
+        <input value={event.time} onChange={e => u("time", e.target.value)} placeholder="HH:MM" style={inp} />
+        <input value={event.endTime || event.end || ""} onChange={e => u("endTime", e.target.value)} placeholder="END" style={inp} />
+        <input value={event.name} onChange={e => u("name", e.target.value)} placeholder="Event name" style={inp} />
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <input value={event.linkedProject || ""} onChange={e => u("linkedProject", e.target.value)} placeholder="Link to project ID" style={{ ...inp, width: "180px" }} />
+        <button onClick={() => onDelete(event.id)}
+          style={{ ...sys("8px", G3), background: "transparent", border: `1px solid ${G4}`, padding: "8px 12px", cursor: "pointer", borderRadius: "4px" }}
+          onMouseEnter={e => { e.currentTarget.style.borderColor = "#b04040"; e.currentTarget.style.color = "#b04040"; }}
+          onMouseLeave={e => { e.currentTarget.style.borderColor = G4; e.currentTarget.style.color = G3; }}>
+          DELETE
+        </button>
+      </div>
+    </div>
+  );
+}
 
 // ─── EDIT PANEL ──────────────────────────────────────────────
 
@@ -226,7 +270,7 @@ function EditPanel({ project, onUpdate, onDelete }) {
 
 // ─── PROJECT ROW (TIER 1 — SHOUT) ───────────────────────────
 
-function ProjectRow({ project, onUpdate, onDelete, open, onToggle, showTime, isNextUp }) {
+function ProjectRow({ project, onUpdate, onDelete, open, onToggle, showTime, isNextUp, flapSize, flapAlign }) {
   const shipped = project.status === "SHIPPED";
   const [flipping, setFlipping] = useState(false);
 
@@ -306,7 +350,7 @@ function ProjectRow({ project, onUpdate, onDelete, open, onToggle, showTime, isN
         </div>
         {/* Name shout — split flap display */}
         <div style={{ padding: "4px 0" }}>
-          <SplitFlapName text={project.name} shipped={shipped} flipping={flipping} />
+          <SplitFlapName text={project.name} shipped={shipped} flipping={flipping} size={flapSize || 104} align={flapAlign || "left"} />
         </div>
         {/* Bottom whisper */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", minHeight: "12px" }}>
@@ -328,28 +372,34 @@ function ProjectRow({ project, onUpdate, onDelete, open, onToggle, showTime, isN
 
 // ─── EVENT ROW (TIER 2 — SPEAK) ─────────────────────────────
 
-function EventRow({ event }) {
+function EventRow({ event, open, onToggle, onUpdate, onDelete }) {
   const linked = event.linkedProject;
   return (
     <div style={{
-      background: G5, borderRadius: "4px", padding: "12px 24px",
-      display: "flex", alignItems: "center", justifyContent: "space-between",
+      background: G5, borderRadius: "4px", overflow: "hidden",
       transition: "all 0.24s cubic-bezier(0.22, 1, 0.36, 1)",
-      cursor: "default",
-    }}
-      onMouseEnter={(e) => { e.currentTarget.style.background = "#202020"; }}
-      onMouseLeave={(e) => { e.currentTarget.style.background = G5; }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "12px", flex: 1, minWidth: 0 }}>
-        <span style={sys("9px", G2, { fontWeight: 600, minWidth: "36px" })}>{event.time}</span>
-        <span style={{
-          fontFamily: MONO, fontSize: "9px", fontWeight: 400, color: G1,
-          letterSpacing: "0.04em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-        }}>{event.name}</span>
+      cursor: "pointer",
+    }}>
+      <div style={{
+        padding: "12px 24px",
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+      }}
+        onClick={onToggle}
+        onMouseEnter={(e) => { e.currentTarget.parentElement.style.background = "#202020"; }}
+        onMouseLeave={(e) => { e.currentTarget.parentElement.style.background = G5; }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", flex: 1, minWidth: 0 }}>
+          <span style={sys("9px", G2, { fontWeight: 600, minWidth: "36px" })}>{event.time}</span>
+          <span style={{
+            fontFamily: MONO, fontSize: "9px", fontWeight: 400, color: G1,
+            letterSpacing: "0.04em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+          }}>{event.name}</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", flexShrink: 0 }}>
+          {linked && <span style={sys("7px", G3, { letterSpacing: "0.08em" })}>→ {linked}</span>}
+          <span style={sys("7px", G4, { letterSpacing: "0.06em" })}>{event.endTime || event.end}</span>
+        </div>
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: "12px", flexShrink: 0 }}>
-        {linked && <span style={sys("7px", G3, { letterSpacing: "0.08em" })}>→ {linked}</span>}
-        <span style={sys("7px", G4, { letterSpacing: "0.06em" })}>{event.end}</span>
-      </div>
+      {open && <EventEditPanel event={event} onUpdate={onUpdate} onDelete={onDelete} />}
     </div>
   );
 }
@@ -492,13 +542,18 @@ function RecapPanel({ projects, sessionMins, onClose }) {
 
 export default function Departures() {
   const [projects, setProjects] = useState([]);
+  const [events, setEvents] = useState([]);
   const [openId, setOpenId] = useState(null);
+  const [openEventId, setOpenEventId] = useState(null);
   const [filter, setFilter] = useState("TODAY");
   const [ready, setReady] = useState(false);
   const [interval, setInterval_] = useState(0.12);
   const [animKey, setAnimKey] = useState(0);
   const [showRecap, setShowRecap] = useState(false);
   const [sessionMins, setSessionMins] = useState(0);
+  const [settings, setSettings] = useState({ zip: "", fontSize: "104", alignment: "left" });
+  const [weather, setWeather] = useState(null);
+  const [zipEditing, setZipEditing] = useState(false);
   const prevFilter = useRef(filter);
 
   useEffect(() => {
@@ -530,6 +585,7 @@ export default function Departures() {
     return () => document.head.removeChild(s);
   }, []);
 
+  // Load projects
   useEffect(() => {
     fetch('/api/projects')
       .then(r => r.json())
@@ -537,6 +593,23 @@ export default function Departures() {
       .catch(() => setReady(true));
   }, []);
 
+  // Load events from API
+  useEffect(() => {
+    fetch('/api/events')
+      .then(r => r.json())
+      .then(setEvents)
+      .catch(() => {});
+  }, []);
+
+  // Load settings + weather
+  useEffect(() => {
+    fetch('/api/settings').then(r => r.json()).then(s => {
+      setSettings(s);
+      if (s.zip) fetchWeather(s.zip).then(setWeather);
+    }).catch(() => {});
+  }, []);
+
+  // Session pulse
   useEffect(() => {
     const fetchSession = () => fetch('/api/session').then(r => r.json()).then(d => setSessionMins(d.elapsedMinutes)).catch(() => {});
     fetchSession();
@@ -547,6 +620,13 @@ export default function Departures() {
   useEffect(() => { if (prevFilter.current !== filter) { setAnimKey((k) => k + 1); prevFilter.current = filter; } }, [filter]);
   useEffect(() => { if (ready) setAnimKey((k) => k + 1); }, [ready]);
 
+  // ─── Settings helpers ──────────────────────────────────────
+  const saveSetting = (key, value) => {
+    setSettings(prev => ({ ...prev, [key]: value }));
+    fetch('/api/settings', { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ [key]: value }) });
+  };
+
+  // ─── Project CRUD ──────────────────────────────────────────
   const add = () => {
     fetch('/api/projects', {
       method: 'POST',
@@ -575,7 +655,25 @@ export default function Departures() {
     fetch(`/api/projects/${id}`, { method: 'DELETE' });
   };
 
+  // ─── Event CRUD ────────────────────────────────────────────
+  const updateEvent = (ev) => {
+    setEvents(prev => prev.map(x => x.id === ev.id ? ev : x));
+    fetch(`/api/events/${ev.id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(ev) });
+  };
+  const removeEvent = (id) => {
+    setEvents(prev => prev.filter(x => x.id !== id));
+    if (openEventId === id) setOpenEventId(null);
+    fetch(`/api/events/${id}`, { method: 'DELETE' });
+  };
+  const addEvent = () => {
+    fetch('/api/events', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ time: "12:00", endTime: "12:30", name: "New event" }) })
+      .then(r => r.json())
+      .then(({ id }) => { fetch('/api/events').then(r => r.json()).then(setEvents); setOpenEventId(id); });
+  };
+
   const isToday = filter === "TODAY";
+  const flapSize = parseInt(settings.fontSize) || 104;
+  const flapAlign = settings.alignment || "left";
 
   // Standard filters
   const filtered = isToday
@@ -593,7 +691,7 @@ export default function Departures() {
       items.push({ type: "project", time: p.todayTime, data: p, sortKey: timeToMinutes(p.todayTime) });
     });
 
-    MOCK_EVENTS.forEach((ev) => {
+    events.forEach((ev) => {
       items.push({ type: "event", time: ev.time, data: ev, sortKey: timeToMinutes(ev.time) });
     });
 
@@ -648,7 +746,8 @@ export default function Departures() {
       {/* HEADER */}
       <div style={{ padding: "24px 24px 12px", borderBottom: `1px solid ${G4}` }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-          <div>
+          {/* Left: title + date + pulse */}
+          <div style={{ flex: 1 }}>
             <h1 style={{ fontFamily: DISPLAY, fontSize: "16px", fontWeight: 400, color: WHITE, letterSpacing: "0.1em", margin: 0, lineHeight: 1, textTransform: "uppercase", textRendering: "optimizeLegibility" }}>
               {isToday ? "Today" : "Departures"}
             </h1>
@@ -660,7 +759,40 @@ export default function Departures() {
               <div title={formatDuration(sessionMins)} style={{ width: "5px", height: "5px", borderRadius: "50%", background: sessionColor(sessionMins), transition: "background 0.3s ease", cursor: "default" }} />
             </div>
           </div>
-          <div style={{ textAlign: "right" }}>
+
+          {/* Center: weather widget */}
+          <div style={{ flex: 1, display: "flex", justifyContent: "center", alignItems: "flex-start" }}>
+            {weather && !zipEditing ? (
+              <div onClick={() => setZipEditing(true)} style={{ cursor: "pointer", textAlign: "center" }}>
+                <div style={sys("9px", G2, { fontWeight: 600 })}>{weather.temp}° {weather.desc.toUpperCase()}</div>
+                <div style={sys("7px", G4, { marginTop: "2px" })}>{weather.city}</div>
+              </div>
+            ) : (
+              <input
+                autoFocus={zipEditing}
+                value={settings.zip}
+                onChange={e => { const v = e.target.value.replace(/\D/g,'').slice(0,5); saveSetting("zip", v); }}
+                onBlur={() => {
+                  if (settings.zip.length === 5) {
+                    fetchWeather(settings.zip).then(w => { if (w) { setWeather(w); setZipEditing(false); } });
+                  } else {
+                    setZipEditing(false);
+                  }
+                }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && settings.zip.length === 5) {
+                    fetchWeather(settings.zip).then(w => { if (w) { setWeather(w); setZipEditing(false); } });
+                  }
+                  if (e.key === 'Escape') setZipEditing(false);
+                }}
+                placeholder="ZIP"
+                style={{ ...sys("9px", G3), background: "transparent", border: "none", outline: "none", width: "48px", textAlign: "center", letterSpacing: "0.12em" }}
+              />
+            )}
+          </div>
+
+          {/* Right: clock + interval selector */}
+          <div style={{ flex: 1, textAlign: "right" }}>
             <div style={{ fontFamily: MONO, fontSize: "18px", fontWeight: 800, color: G2, letterSpacing: "0.06em", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{time}</div>
             <div style={{ display: "flex", gap: "0px", marginTop: "4px", justifyContent: "flex-end" }}>
               {intervals.map((v) => (
@@ -686,6 +818,27 @@ export default function Departures() {
             }}>{f}</button>
           ))}
         </div>
+        {/* Font size + alignment controls */}
+        <div style={{ display: "flex", alignItems: "center" }}>
+          <div style={{ display: "flex", gap: "0px" }}>
+            {FONT_SIZES.map(fs => (
+              <button key={fs.label} onClick={() => saveSetting("fontSize", String(fs.value))} style={{
+                background: "transparent", border: "none", fontFamily: MONO, fontSize: "7px",
+                color: parseInt(settings.fontSize) === fs.value ? G2 : G5,
+                cursor: "pointer", padding: "4px 8px", letterSpacing: "0.06em", transition: "color 0.12s",
+              }}>{fs.label}</button>
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: "0px", marginLeft: "8px" }}>
+            {["left", "center", "right"].map(a => (
+              <button key={a} onClick={() => saveSetting("alignment", a)} style={{
+                background: "transparent", border: "none", fontFamily: MONO, fontSize: "7px",
+                color: settings.alignment === a ? G2 : G5,
+                cursor: "pointer", padding: "4px 8px", letterSpacing: "0.06em", transition: "color 0.12s",
+              }}>{a === "left" ? "◁" : a === "center" ? "·" : "▷"}</button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* BOARD */}
@@ -697,7 +850,9 @@ export default function Departures() {
               if (item.type === "now") return <NowLine key="now" />;
               if (item.type === "event") return (
                 <div key={item.data.id} className="arrive" style={{ animationDelay: `${i * interval}s`, padding: "0 12px" }}>
-                  <EventRow event={item.data} />
+                  <EventRow event={item.data} open={openEventId === item.data.id}
+                    onToggle={() => setOpenEventId(openEventId === item.data.id ? null : item.data.id)}
+                    onUpdate={updateEvent} onDelete={removeEvent} />
                 </div>
               );
               if (item.type === "email") return (
@@ -708,7 +863,8 @@ export default function Departures() {
               if (item.type === "project") return (
                 <div key={`${item.data.id}-${animKey}`} className="arrive" style={{ animationDelay: `${i * interval}s`, padding: "0 12px" }}>
                   <ProjectRow project={item.data} onUpdate={update} onDelete={remove} open={openId === item.data.id}
-                    onToggle={() => setOpenId(openId === item.data.id ? null : item.data.id)} showTime isNextUp={item.data.id === nextUpId} />
+                    onToggle={() => setOpenId(openId === item.data.id ? null : item.data.id)} showTime isNextUp={item.data.id === nextUpId}
+                    flapSize={flapSize} flapAlign={flapAlign} />
                 </div>
               );
               return null;
@@ -720,7 +876,8 @@ export default function Departures() {
                 {unscheduled.map((p, i) => (
                   <div key={`${p.id}-${animKey}`} className="arrive" style={{ animationDelay: `${(todayTimeline.length + i) * interval}s`, padding: "0 12px" }}>
                     <ProjectRow project={p} onUpdate={update} onDelete={remove} open={openId === p.id}
-                      onToggle={() => setOpenId(openId === p.id ? null : p.id)} showTime={false} isNextUp={p.id === nextUpId} />
+                      onToggle={() => setOpenId(openId === p.id ? null : p.id)} showTime={false} isNextUp={p.id === nextUpId}
+                      flapSize={flapSize} flapAlign={flapAlign} />
                   </div>
                 ))}
               </>
@@ -731,7 +888,8 @@ export default function Departures() {
             {filtered.map((p, i) => (
               <div key={`${p.id}-${animKey}`} className="arrive" style={{ animationDelay: `${i * interval}s`, padding: "0 12px" }}>
                 <ProjectRow project={p} onUpdate={update} onDelete={remove} open={openId === p.id}
-                  onToggle={() => setOpenId(openId === p.id ? null : p.id)} showTime={false} isNextUp={p.id === nextUpId} />
+                  onToggle={() => setOpenId(openId === p.id ? null : p.id)} showTime={false} isNextUp={p.id === nextUpId}
+                  flapSize={flapSize} flapAlign={flapAlign} />
               </div>
             ))}
           </>
@@ -746,6 +904,19 @@ export default function Departures() {
 
       {/* ACTIONS */}
       <div style={{ position: "fixed", bottom: "24px", right: "24px", display: "flex", gap: "8px", zIndex: 50 }}>
+        {isToday && (
+          <button onClick={addEvent} title="Add event" style={{
+            width: "36px", height: "36px", borderRadius: "50%",
+            background: G5, border: `1px solid ${G4}`,
+            color: G3, fontFamily: MONO, fontSize: "7px", fontWeight: 700,
+            cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+            transition: "all 0.15s", letterSpacing: "0.02em",
+          }}
+            onMouseEnter={(e) => { e.currentTarget.style.borderColor = G2; e.currentTarget.style.color = G2; }}
+            onMouseLeave={(e) => { e.currentTarget.style.borderColor = G4; e.currentTarget.style.color = G3; }}>
+            EV+
+          </button>
+        )}
         <button onClick={() => setShowRecap(true)} style={{
           width: "44px", height: "44px", borderRadius: "50%",
           background: G5, border: `1px solid ${G4}`,
@@ -783,7 +954,7 @@ export default function Departures() {
 
       {/* FOOTER */}
       <div style={{ padding: "24px 24px 48px", textAlign: "center" }}>
-        <span style={sys("7px", G5, { letterSpacing: "0.2em" })}>DEPARTURES 0.3 · USD-COMPOSED · SOLARI PROTOCOL</span>
+        <span style={sys("7px", G5, { letterSpacing: "0.2em" })}>DEPARTURES 0.4 · USD-COMPOSED · SOLARI PROTOCOL</span>
       </div>
     </div>
   );

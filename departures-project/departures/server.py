@@ -132,6 +132,43 @@ async def seed():
     return {"seeded": True}
 
 
+# ── Event endpoints ──────────────────────────────────────────────
+
+@app.get("/api/events")
+async def list_events():
+    return await db.list_events()
+
+
+@app.post("/api/events")
+async def create_event(request: Request):
+    body = await request.json()
+    return await db.create_event(body)
+
+
+@app.put("/api/events/{eid}")
+async def update_event(eid: str, request: Request):
+    body = await request.json()
+    return await db.update_event(eid, body)
+
+
+@app.delete("/api/events/{eid}")
+async def delete_event(eid: str):
+    return await db.delete_event(eid)
+
+
+# ── Settings endpoints ───────────────────────────────────────────
+
+@app.get("/api/settings")
+async def get_settings():
+    return await db.get_settings()
+
+
+@app.put("/api/settings")
+async def update_settings(request: Request):
+    body = await request.json()
+    return await db.update_settings(body)
+
+
 # ── Static file serving ──────────────────────────────────────────
 
 # Mount static assets from the built frontend (JS, CSS, images, fonts)
