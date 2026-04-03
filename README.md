@@ -154,14 +154,14 @@ gantt
     
     section Events
     Morning standup         :ev1, 09:00, 30m
-    Dylan basketball pickup :ev2, 11:30, 30m
-    Patent attorney call    :ev3, 15:00, 30m
+    Client review call      :ev2, 11:30, 30m
+    Design critique session :ev3, 15:00, 30m
     
     section Projects
-    Otto OS (ACTIVE)        :active, 10:00, 60m
-    Departures App (ACTIVE) :active, 11:00, 60m
-    US Patents (ACTIVE)     :crit, 14:00, 60m
-    Synapse (ACTIVE)        :active, 16:00, 60m
+    Brand Refresh (ACTIVE)  :active, 10:00, 60m
+    This App (ACTIVE)       :active, 11:00, 60m
+    Product Launch (ACTIVE) :crit, 14:00, 60m
+    AR Prototype (ACTIVE)   :active, 16:00, 60m
 ```
 
 ### NEXT UP

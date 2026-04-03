@@ -59,9 +59,9 @@ async function fetchWeather(zip) {
 
 // Mock emails (would come from Gmail MCP)
 const MOCK_EMAILS = [
-  { id: "em1", type: "email", time: "08:15", from: "USPTO", subject: "Patent filing confirmation — USD Cognitive Substrate", linkedProject: "patents" },
-  { id: "em2", type: "email", time: "09:45", from: "Vercel", subject: "Deploy succeeded: jaimeibrahim.com", linkedProject: "jaime" },
-  { id: "em3", type: "email", time: "12:20", from: "GitHub", subject: "New issue on Harlo: hippocampus decay test flaky", linkedProject: "cog-sub" },
+  { id: "em1", type: "email", time: "08:15", from: "Figma", subject: "New comment on Brand Refresh — color system", linkedProject: "brand-refresh" },
+  { id: "em2", type: "email", time: "09:45", from: "Vercel", subject: "Deploy succeeded: portfolio site", linkedProject: "portfolio-site" },
+  { id: "em3", type: "email", time: "12:20", from: "GitHub", subject: "New issue: render pipeline memory leak", linkedProject: "render-pipeline" },
 ];
 
 // ─── NEXT UP SCORING ─────────────────────────────────────────

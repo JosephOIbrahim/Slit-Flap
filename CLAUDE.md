@@ -204,7 +204,7 @@ PUT    /api/session/end           → Register session end
 
 **Phase 1 (current build):** SQLite is the primary store. USD is **optional and deferred.**
 
-**Phase 2 (future):** Each project becomes a USD prim. Status transitions are time-sampled. History is sublayered. The stage file is human-readable, git-trackable, and composable with Harlo's cognitive stage.
+**Phase 2 (future):** Each project becomes a USD prim. Status transitions are time-sampled. History is sublayered. The stage file is human-readable, git-trackable, and composable with external cognitive state systems.
 
 **Responsibilities (Phase 1 — design only, don't build yet):**
 - Document the USD schema mapping in `docs/USD_SCHEMA.md`
@@ -220,7 +220,7 @@ PUT    /api/session/end           → Register session end
 - Define how `status` maps to variant sets
 - Define how `log` entries map to time-sampled attributes
 - Define how `notes` (flip-side) map to customData
-- Ensure the schema is compatible with Harlo's `AIMemoryChunk` / `CognitiveObservation` patterns
+- Ensure the schema is compatible with `AIMemoryChunk` / `CognitiveObservation` patterns
 
 **Phase 2 (future build):**
 - `usd_stage.py` — read/write `.usda` files alongside SQLite
@@ -331,7 +331,7 @@ These are v2. Don't touch them. Don't scaffold them. Don't even create empty fil
 
 - Google Calendar integration
 - Gmail / email integration  
-- Harlo MCP connection
+- Cognitive twin MCP connection
 - User authentication
 - Multi-user support
 - Deployment / hosting

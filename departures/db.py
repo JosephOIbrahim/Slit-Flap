@@ -127,37 +127,37 @@ CREATE TABLE IF NOT EXISTS viewers (
 # ── Seed data ─────────────────────────────────────────────────────
 
 SEEDS = [
-    ("otto", "Otto OS", "ACTIVE", "01", "AI", "WhatsApp integration + follow-up loop", 1, 6, "10:00"),
-    ("patents", "US Patents", "ACTIVE", "01", "OPS", "File USD Cognitive Substrate patent", 0, 3, "14:00"),
-    ("use-products", "Use Your Products", "BLOCKED", "01", "OPS", "Synapse + OTTO CLI + Comfy Agent", 0, 4, ""),
-    ("comfyui", "ComfyUI Agent", "SHIPPED", "02", "AI", "Refactor + demo", 1, 3, ""),
-    ("synapse", "Synapse", "ACTIVE", "02", "MIX", "Refactor for Houdini 21 + demo", 0, 4, "16:00"),
-    ("cog-sub", "USD Cog Substrate", "ROLLING", "02", "AI", "General improvements", 5, 8, ""),
-    ("carwash", "CarWash Renderer", "QUEUED", "02", "MIX", "Houdini GenAI render pipeline", 0, 5, ""),
-    ("translators", "Translators Game", "QUEUED", "03", "MIX", "Game mechanics + intake pipeline", 0, 5, ""),
-    ("trellis", "Trellis-2", "ACTIVE", "03", "MIX", "Lightweight USD export", 1, 3, ""),
-    ("td-asst", "TD Assistant", "QUEUED", "03", "MIX", "Reimagine Synapse for TouchDesigner", 0, 4, ""),
-    ("rtx-remix", "ComfyUI RTX Remix", "QUEUED", "03", "MIX", "", 0, 0, ""),
-    ("jaime", "jaimeibrahim.com", "QUEUED", "03", "WEB", "Create MAINTENANCE.md", 0, 2, ""),
-    ("joe-site", "josephibrahim.com", "QUEUED", "03", "WEB", "Add Houdini + UE work", 0, 4, ""),
-    ("conductor", "aiconductor.studio", "BLOCKED", "04", "WEB", "Rebrand — no longer a conductor", 0, 3, ""),
-    ("departures", "Departures App", "ACTIVE", "03", "WEB", "Iterate design + PWA", 1, 5, "11:00"),
-    ("isaac", "Isaac Sim LLM", "QUEUED", "04", "AI", "USD Cog Substrate on robotics", 0, 0, ""),
+    ("brand-refresh", "Brand Refresh", "ACTIVE", "01", "MIX", "Finalize color palette + type system", 3, 6, "10:00"),
+    ("product-launch", "Product Launch", "ACTIVE", "01", "OPS", "Review launch timeline with team", 1, 4, "14:00"),
+    ("motion-system", "Motion System", "BLOCKED", "01", "VFX", "Waiting on asset delivery", 2, 5, ""),
+    ("icon-library", "Icon Library", "SHIPPED", "02", "MIX", "Final QA pass complete", 8, 8, ""),
+    ("ar-prototype", "AR Prototype", "ACTIVE", "02", "AI", "Integrate gesture recognition", 1, 4, "16:00"),
+    ("design-system", "Design System", "ROLLING", "02", "WEB", "Component audit + documentation", 5, 8, ""),
+    ("render-pipeline", "Render Pipeline", "QUEUED", "02", "VFX", "Evaluate new GPU shaders", 0, 5, ""),
+    ("type-specimen", "Type Specimen", "QUEUED", "03", "MIX", "Specimen book layout + print", 0, 5, ""),
+    ("3d-scanning", "3D Scanning", "ACTIVE", "03", "VFX", "Calibrate photogrammetry rig", 1, 3, ""),
+    ("voice-agent", "Voice Agent", "QUEUED", "03", "AI", "NLU training data collection", 0, 4, ""),
+    ("showreel", "Showreel", "QUEUED", "03", "VFX", "Cut new 2-minute reel", 0, 3, ""),
+    ("portfolio-site", "Portfolio Site", "QUEUED", "03", "WEB", "Redesign with new work", 0, 4, ""),
+    ("studio-blog", "Studio Blog", "QUEUED", "03", "WEB", "Monthly case study post", 0, 2, ""),
+    ("client-portal", "Client Portal", "BLOCKED", "04", "WEB", "API integration pending", 0, 3, ""),
+    ("departures", "This App", "ACTIVE", "03", "WEB", "Iterate design + features", 3, 5, "11:00"),
+    ("ml-pipeline", "ML Pipeline", "QUEUED", "04", "AI", "Training infrastructure setup", 0, 4, ""),
 ]
 
 SEED_EVENTS = [
-    ("ev1", "09:00", "09:30", "Morning standup", "Google Calendar", ""),
-    ("ev2", "11:30", "12:00", "Dylan basketball pickup", "Family", ""),
-    ("ev3", "13:00", "13:30", "Lunch — skip if deep in flow", "Google Calendar", ""),
-    ("ev4", "15:00", "15:30", "Patent attorney call", "Google Calendar", "patents"),
-    ("ev5", "17:30", "18:00", "Dog walk + debrief", "Family", ""),
+    ("ev1", "09:00", "09:30", "Morning standup", "Calendar", ""),
+    ("ev2", "11:30", "12:00", "Client review call", "Calendar", ""),
+    ("ev3", "13:00", "13:30", "Lunch break", "Calendar", ""),
+    ("ev4", "15:00", "15:30", "Design critique session", "Calendar", "brand-refresh"),
+    ("ev5", "17:30", "18:00", "End of day wrap-up", "Calendar", ""),
 ]
 
 _SEED_AGES = {
-    "otto": 0.5, "patents": 2, "use-products": 5, "comfyui": 14,
-    "synapse": 1, "cog-sub": 0.2, "carwash": 8, "translators": 12,
-    "trellis": 3, "td-asst": 10, "rtx-remix": 20, "jaime": 7,
-    "joe-site": 15, "conductor": 18, "departures": 0, "isaac": 25,
+    "brand-refresh": 0.5, "product-launch": 2, "motion-system": 5, "icon-library": 14,
+    "ar-prototype": 1, "design-system": 0.2, "render-pipeline": 8, "type-specimen": 12,
+    "3d-scanning": 3, "voice-agent": 10, "showreel": 20, "portfolio-site": 7,
+    "studio-blog": 15, "client-portal": 18, "departures": 0, "ml-pipeline": 25,
 }
 
 

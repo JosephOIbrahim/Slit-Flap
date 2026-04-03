@@ -10,7 +10,7 @@ readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.11"
 authors = [
-    {name = "Joseph Ibrahim", email = "joe@josephibrahim.com"}
+    {name = "Joseph Ibrahim"}
 ]
 keywords = ["project-manager", "departure-board", "split-flap", "adhd", "usd"]
 

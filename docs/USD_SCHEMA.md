@@ -6,35 +6,35 @@
 ## Prim Hierarchy
 
 ```
-/departures                          ← root
-  /departures/projects               ← scope
-    /departures/projects/otto_os     ← project prim (typed: DeparturesProject)
-    /departures/projects/us_patents
-    /departures/projects/synapse
+/departures                                ← root
+  /departures/projects                     ← scope
+    /departures/projects/brand_refresh     ← project prim (typed: DeparturesProject)
+    /departures/projects/product_launch
+    /departures/projects/ar_prototype
     ...
-  /departures/sessions               ← scope
-    /departures/sessions/s_001       ← session prim
-  /departures/notes                  ← scope
-    /departures/notes/otto_os        ← flip-side notes prim
+  /departures/sessions                     ← scope
+    /departures/sessions/s_001             ← session prim
+  /departures/notes                        ← scope
+    /departures/notes/brand_refresh        ← flip-side notes prim
 ```
 
 ## Project Prim Schema
 
 ```usda
-def DeparturesProject "otto_os" (
+def DeparturesProject "brand_refresh" (
     variantSets = ["status"]
     variants = {
         string status = "ACTIVE"
     }
 )
 {
-    string name = "Otto OS"
-    string domain = "AI"
+    string name = "Brand Refresh"
+    string domain = "MIX"
     string track = "01"
-    string next_action = "WhatsApp integration + follow-up loop"
+    string next_action = "Finalize color palette + type system"
     string deadline = ""
     string bg_color = ""
-    int mile = 1
+    int mile = 3
     int mile_total = 6
     string today_time = "10:00"
 
@@ -67,9 +67,9 @@ variantSet "status" = {
 ## Notes as customData
 
 ```usda
-def "otto_os_notes" (
+def "brand_refresh_notes" (
     customData = {
-        string content = "<p>WhatsApp integration notes...</p>"
+        string content = "<p>Color palette exploration notes...</p>"
         string updated_at = "2026-04-02T10:15:00Z"
     }
 )
@@ -81,9 +81,9 @@ def "otto_os_notes" (
 
 ```usda
 string log_entry.timeSamples = {
-    1: "Started WhatsApp integration research",
-    50: "Found Twilio API docs",
-    100: "Prototype sending messages",
+    1: "Started research on type systems",
+    50: "Narrowed to 3 typeface candidates",
+    100: "Prototype layout with final selection",
 }
 ```
 
@@ -96,13 +96,13 @@ string log_entry.timeSamples = {
 - **Export:** flatten current state to single `.usda` for portability
 - **Import:** parse `.usda`, populate SQLite tables
 
-## Harlo Compatibility
+## Cognitive Twin Compatibility
 
-Maps to Harlo's `AIMemoryChunk` pattern:
+Maps to the `AIMemoryChunk` pattern:
 - Project prim → `capsule_type: "project"`
 - Status variant → cognitive state mapping
 - Time-sampled attributes → observation timeline
 - Session sublayers → session lifecycle (register → heartbeat → close)
 
-The `prim_path` in Harlo's capsule schema maps directly:
+The `prim_path` in the capsule schema maps directly:
 `/sessions/{session_id}/capsules/{capsule_id}` ↔ `/departures/sessions/s_001`
