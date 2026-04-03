@@ -19,6 +19,7 @@ _COL_TO_CAMEL = {
     "bg_color": "bgColor",
     "mile_total": "of",
     "today_time": "todayTime",
+    "sort_order": "sortOrder",
     "last_touched": "lastTouched",
     "created_at": "createdAt",
     "updated_at": "updatedAt",
@@ -29,7 +30,7 @@ _CAMEL_TO_COL = {v: k for k, v in _COL_TO_CAMEL.items()}
 _PROJECT_COLS = [
     "id", "name", "status", "track", "domain", "next_action",
     "deadline", "bg_color", "mile", "mile_total", "today_time",
-    "last_touched", "created_at", "updated_at",
+    "sort_order", "last_touched", "created_at", "updated_at",
 ]
 
 
@@ -69,6 +70,7 @@ CREATE TABLE IF NOT EXISTS projects (
     mile INTEGER DEFAULT 0,
     mile_total INTEGER DEFAULT 0,
     today_time TEXT DEFAULT '',
+    sort_order INTEGER DEFAULT 0,
     last_touched TEXT,
     created_at TEXT,
     updated_at TEXT
@@ -196,6 +198,27 @@ async def init_db() -> None:
     db = await _conn()
     try:
         await db.executescript(_SCHEMA)
+        # Migration: add sort_order column if missing (existing DBs)
+        try:
+            await db.execute("ALTER TABLE projects ADD COLUMN sort_order INTEGER DEFAULT 0")
+            await db.commit()
+            # Initialize sort_order to sequential values based on current order
+            cursor = await db.execute("SELECT id FROM projects ORDER BY track, name")
+            rows = await cursor.fetchall()
+            for i, row in enumerate(rows):
+                await db.execute("UPDATE projects SET sort_order = ? WHERE id = ?", (i, row["id"]))
+            await db.commit()
+        except Exception:
+            # Column already exists — ensure sort_orders are unique
+            cursor = await db.execute("SELECT COUNT(DISTINCT sort_order) as cnt, COUNT(*) as total FROM projects")
+            row = await cursor.fetchone()
+            if row["cnt"] < row["total"]:
+                # All same value — assign sequential
+                cursor2 = await db.execute("SELECT id FROM projects ORDER BY sort_order, track, name")
+                rows2 = await cursor2.fetchall()
+                for i, r in enumerate(rows2):
+                    await db.execute("UPDATE projects SET sort_order = ? WHERE id = ?", (i, r["id"]))
+                await db.commit()
         cursor = await db.execute("SELECT COUNT(*) FROM projects")
         row = await cursor.fetchone()
         if row[0] == 0:
@@ -242,7 +265,7 @@ async def list_projects() -> list[dict]:
     db = await _conn()
     try:
         cursor = await db.execute(
-            "SELECT * FROM projects ORDER BY track, name"
+            "SELECT * FROM projects ORDER BY sort_order, track, name"
         )
         rows = await cursor.fetchall()
         projects = []

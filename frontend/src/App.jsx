@@ -772,33 +772,23 @@ export default function Departures() {
   // ─── Priority reorder ────────────────────────────────────
   const moveProject = (direction) => {
     if (!openId) return;
-    // Work on the currently displayed list
-    const displayList = isToday
-      ? [...filtered, ...unscheduled]
-      : filtered;
-    const idx = displayList.findIndex(p => p.id === openId);
+    const idx = projects.findIndex(p => p.id === openId);
     if (idx === -1) return;
     const swapIdx = direction === "up" ? idx - 1 : idx + 1;
-    if (swapIdx < 0 || swapIdx >= displayList.length) return;
-    const a = displayList[idx];
-    const b = displayList[swapIdx];
-    // Swap their tracks so sort order changes
-    const trackA = a.track;
-    const trackB = b.track;
-    if (trackA !== trackB) {
-      update({ ...a, track: trackB });
-      update({ ...b, track: trackA });
-    } else {
-      // Same track: nudge the project to the adjacent track
-      const allTracks = TRACKS;
-      const trackIdx = allTracks.indexOf(a.track);
-      const newTrack = direction === "up"
-        ? allTracks[Math.max(0, trackIdx - 1)]
-        : allTracks[Math.min(allTracks.length - 1, trackIdx + 1)];
-      if (newTrack !== a.track) {
-        update({ ...a, track: newTrack });
-      }
-    }
+    if (swapIdx < 0 || swapIdx >= projects.length) return;
+    const a = projects[idx];
+    const b = projects[swapIdx];
+    // Use index-based ordering if sortOrders are equal or both 0
+    const orderA = (a.sortOrder !== b.sortOrder) ? a.sortOrder : idx;
+    const orderB = (a.sortOrder !== b.sortOrder) ? b.sortOrder : swapIdx;
+    // Optimistic: swap in local state immediately
+    const newProjects = [...projects];
+    newProjects[idx] = { ...b, sortOrder: orderA };
+    newProjects[swapIdx] = { ...a, sortOrder: orderB };
+    setProjects(newProjects);
+    // Persist both
+    fetch(`/api/projects/${a.id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ sortOrder: orderB }) });
+    fetch(`/api/projects/${b.id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ sortOrder: orderA }) });
   };
 
   const isToday = filter === "TODAY";
@@ -808,9 +798,7 @@ export default function Departures() {
   // Standard filters
   const filtered = isToday
     ? projects.filter((p) => p.status !== "SHIPPED" && p.todayTime)
-    : projects
-        .filter((p) => filter === "ALL" ? p.status !== "SHIPPED" : p.status === filter)
-        .sort((a, b) => a.track.localeCompare(b.track) || STATUSES.indexOf(a.status) - STATUSES.indexOf(b.status));
+    : projects.filter((p) => filter === "ALL" ? p.status !== "SHIPPED" : p.status === filter);
 
   // TODAY view: build unified timeline
   const todayTimeline = (() => {
