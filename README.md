@@ -10,6 +10,8 @@
 
 One command. Browser opens. Your projects flip in like arrivals at Penn Station. You glance up and know where everything stands.
 
+![DEPARTURES board showing split-flap project cards with status, edit panel, weather, and filter controls](docs/screenshot.png)
+
 ---
 
 ## What Is This? (Plain English)
