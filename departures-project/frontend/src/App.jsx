@@ -554,6 +554,7 @@ export default function Departures() {
   const [settings, setSettings] = useState({ zip: "", fontSize: "104", alignment: "left" });
   const [weather, setWeather] = useState(null);
   const [zipEditing, setZipEditing] = useState(false);
+  const [zipDraft, setZipDraft] = useState("");
   const prevFilter = useRef(filter);
 
   useEffect(() => {
@@ -605,6 +606,7 @@ export default function Departures() {
   useEffect(() => {
     fetch('/api/settings').then(r => r.json()).then(s => {
       setSettings(s);
+      setZipDraft(s.zip || "");
       if (s.zip) fetchWeather(s.zip).then(setWeather);
     }).catch(() => {});
   }, []);
@@ -674,17 +676,33 @@ export default function Departures() {
   // ─── Priority reorder ────────────────────────────────────
   const moveProject = (direction) => {
     if (!openId) return;
-    const idx = projects.findIndex(p => p.id === openId);
+    // Work on the currently displayed list
+    const displayList = isToday
+      ? [...filtered, ...unscheduled]
+      : filtered;
+    const idx = displayList.findIndex(p => p.id === openId);
     if (idx === -1) return;
     const swapIdx = direction === "up" ? idx - 1 : idx + 1;
-    if (swapIdx < 0 || swapIdx >= projects.length) return;
-    const a = projects[idx];
-    const b = projects[swapIdx];
-    // Swap tracks to change sort position
-    const newA = { ...a, track: b.track };
-    const newB = { ...b, track: a.track };
-    update(newA);
-    update(newB);
+    if (swapIdx < 0 || swapIdx >= displayList.length) return;
+    const a = displayList[idx];
+    const b = displayList[swapIdx];
+    // Swap their tracks so sort order changes
+    const trackA = a.track;
+    const trackB = b.track;
+    if (trackA !== trackB) {
+      update({ ...a, track: trackB });
+      update({ ...b, track: trackA });
+    } else {
+      // Same track: nudge the project to the adjacent track
+      const allTracks = TRACKS;
+      const trackIdx = allTracks.indexOf(a.track);
+      const newTrack = direction === "up"
+        ? allTracks[Math.max(0, trackIdx - 1)]
+        : allTracks[Math.min(allTracks.length - 1, trackIdx + 1)];
+      if (newTrack !== a.track) {
+        update({ ...a, track: newTrack });
+      }
+    }
   };
 
   const isToday = filter === "TODAY";
@@ -780,29 +798,31 @@ export default function Departures() {
             {/* Weather / zip input */}
             <div style={{ textAlign: "right", minWidth: "80px" }}>
               {weather && !zipEditing ? (
-                <div onClick={() => setZipEditing(true)} style={{ cursor: "pointer" }}>
+                <div onClick={() => { setZipDraft(settings.zip); setZipEditing(true); }} style={{ cursor: "pointer" }}>
                   <div style={sys("9px", G2, { fontWeight: 600, textAlign: "right" })}>{weather.temp}° {weather.desc.toUpperCase()}</div>
                   <div style={sys("9px", G4, { marginTop: "2px", textAlign: "right" })}>{weather.city}</div>
                 </div>
               ) : (
                 <div>
                   <input
-                    autoFocus={zipEditing}
-                    value={settings.zip}
-                    onChange={e => { const v = e.target.value.replace(/\D/g,'').slice(0,5); saveSetting("zip", v); }}
+                    autoFocus
+                    value={zipDraft}
+                    onChange={e => setZipDraft(e.target.value.replace(/\D/g, "").slice(0, 5))}
                     onBlur={() => {
-                      if (settings.zip.length === 5) {
-                        fetchWeather(settings.zip).then(w => { if (w) { setWeather(w); setZipEditing(false); } });
+                      if (zipDraft.length === 5) {
+                        saveSetting("zip", zipDraft);
+                        fetchWeather(zipDraft).then(w => { if (w) { setWeather(w); setZipEditing(false); } });
                       }
                     }}
                     onKeyDown={e => {
-                      if (e.key === 'Enter' && settings.zip.length === 5) {
-                        fetchWeather(settings.zip).then(w => { if (w) { setWeather(w); setZipEditing(false); } });
+                      if (e.key === "Enter" && zipDraft.length === 5) {
+                        saveSetting("zip", zipDraft);
+                        fetchWeather(zipDraft).then(w => { if (w) { setWeather(w); setZipEditing(false); } });
                       }
-                      if (e.key === 'Escape') { setZipEditing(false); }
+                      if (e.key === "Escape") setZipEditing(false);
                     }}
                     placeholder="ZIP"
-                    style={{ ...sys("10px", G2), background: "transparent", border: `1px solid ${G4}`, borderRadius: "4px", outline: "none", width: "56px", textAlign: "center", letterSpacing: "0.12em", padding: "4px 8px" }}
+                    style={{ fontFamily: MONO, fontSize: "10px", color: WHITE, background: G6, border: `1px solid ${G4}`, borderRadius: "4px", outline: "none", width: "64px", textAlign: "center", letterSpacing: "0.14em", padding: "6px 8px", boxSizing: "border-box" }}
                   />
                 </div>
               )}
