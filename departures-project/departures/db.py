@@ -407,7 +407,7 @@ async def update_notes(pid: str, content: str) -> dict:
 
 async def get_recap() -> dict:
     """Today's touched projects and log count."""
-    today_str = date.today().isoformat()
+    today_str = datetime.now(timezone.utc).date().isoformat()
     db = await _conn()
     try:
         # Projects touched today (last_touched starts with today's date)

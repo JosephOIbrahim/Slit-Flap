@@ -199,16 +199,23 @@ const SWATCHES = ["", "#1a1714", "#1a1318", "#141a18", "#18141a", "#1a1910", "#1
 // ─── EVENT EDIT PANEL ────────────────────────────────────────
 
 function EventEditPanel({ event, onUpdate, onDelete }) {
-  const u = (k, v) => onUpdate({ ...event, [k]: v });
+  const [draft, setDraft] = useState({
+    time: event.time || "",
+    endTime: event.endTime || event.end || "",
+    name: event.name || "",
+    linkedProject: event.linkedProject || "",
+  });
+  const d = (k, v) => setDraft(prev => ({ ...prev, [k]: v }));
+  const save = () => onUpdate({ ...event, ...draft });
   return (
     <div style={{ padding: "12px 24px", borderTop: `1px solid ${G4}`, background: G6 }} onClick={e => e.stopPropagation()}>
       <div style={{ display: "grid", gridTemplateColumns: "60px 60px 1fr", gap: "8px", marginBottom: "8px" }}>
-        <input value={event.time} onChange={e => u("time", e.target.value)} placeholder="HH:MM" style={inp} />
-        <input value={event.endTime || event.end || ""} onChange={e => u("endTime", e.target.value)} placeholder="END" style={inp} />
-        <input value={event.name} onChange={e => u("name", e.target.value)} placeholder="Event name" style={inp} />
+        <input value={draft.time} onChange={e => d("time", e.target.value)} onBlur={save} placeholder="HH:MM" style={inp} />
+        <input value={draft.endTime} onChange={e => d("endTime", e.target.value)} onBlur={save} placeholder="END" style={inp} />
+        <input value={draft.name} onChange={e => d("name", e.target.value)} onBlur={save} placeholder="Event name" style={inp} />
       </div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <input value={event.linkedProject || ""} onChange={e => u("linkedProject", e.target.value)} placeholder="Link to project ID" style={{ ...inp, width: "180px" }} />
+        <input value={draft.linkedProject} onChange={e => d("linkedProject", e.target.value)} onBlur={save} placeholder="Link to project ID" style={{ ...inp, width: "180px" }} />
         <button onClick={() => onDelete(event.id)}
           style={{ ...sys("9px", G3), background: "transparent", border: `1px solid ${G4}`, padding: "8px 12px", cursor: "pointer", borderRadius: "4px" }}
           onMouseEnter={e => { e.currentTarget.style.borderColor = "#b04040"; e.currentTarget.style.color = "#b04040"; }}
@@ -487,7 +494,6 @@ function RecapPanel({ projects, sessionMins, onClose }) {
     if (!p.lastTouched) return false;
     return new Date(p.lastTouched).toDateString() === today;
   });
-  const active = touched.filter((p) => p.status === "ACTIVE" || p.status === "ROLLING");
   const shipped = touched.filter((p) => p.status === "SHIPPED");
 
   return (
