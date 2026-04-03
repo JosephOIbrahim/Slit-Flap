@@ -30,7 +30,7 @@ That's it. If it takes more than 3 commands, we failed.
 
 ## The Vibe
 
-**Design DNA:** Pentagram studio restraint. Solari di Udine split-flap boards. The 30th Street Station departure board in Philadelphia. One font system (Disket Mono + JetBrains Mono). One accent color (amber). Typography IS the design.
+**Design DNA:** Studio-grade restraint. Solari di Udine split-flap boards. The 30th Street Station departure board in Philadelphia. One font system (Disket Mono + JetBrains Mono). One accent color (amber). Typography IS the design.
 
 **Aesthetic Rules:**
 - Two fonts only. **Disket Mono** = identity (project names, headers). **JetBrains Mono** = system (everything else).

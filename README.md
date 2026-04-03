@@ -276,7 +276,7 @@ graph TB
         direction TB
         F1["App.jsx — Single-file React app"]
         F2["Split-flap character renderer"]
-        F3["Pentagram design system\n6-grey palette · 4px radius · 9px min"]
+        F3["Solari design system\n6-grey palette · 4px radius · 9px min"]
     end
     
     subgraph Backend["Backend (Python)"]
@@ -358,9 +358,9 @@ erDiagram
 
 ## Design Philosophy
 
-**Design DNA:** Pentagram studio restraint. Solari di Udine split-flap boards. The 30th Street Station departure board in Philadelphia.
+**Design DNA:** Studio-grade restraint. Solari di Udine split-flap boards. The 30th Street Station departure board in Philadelphia.
 
-The interface follows seven principles from a [Pentagram design tightening pass](DESIGN_TIGHTENING.md):
+The interface follows seven principles from a [design tightening pass](DESIGN_TIGHTENING.md):
 
 1. **Every element earns its space** — if removing it loses zero information, it's gone
 2. **Typography has only two volumes** — project names SHOUT (split-flap display font), everything else whispers (9px system font). No middle.
@@ -393,7 +393,7 @@ If any of that sounds familiar, this might be for you.
 | Layer | Technology | Why |
 |-------|-----------|-----|
 | Frontend | React 18 + Vite | Fast build, hot reload |
-| Styling | Inline styles | Pentagram-tight, no framework overhead |
+| Styling | Inline styles | Precision design, no framework overhead |
 | Display font | Disket Mono | Geometric monospace — train station DNA |
 | System font | JetBrains Mono | Clean, readable, monospace utility |
 | Backend | FastAPI + uvicorn | Async, fast, minimal boilerplate |

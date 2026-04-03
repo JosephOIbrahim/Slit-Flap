@@ -1,10 +1,10 @@
-# DESIGN TIGHTENING PASS — Pentagram Principles Applied
+# DESIGN TIGHTENING PASS — Solari Design Principles
 
 ## Context
 
 You are refining the frontend of DEPARTURES, a split-flap departure board project manager. The design elements are correct — split-flap character modules, dark panels, amber accent, Disket Mono display font, JetBrains Mono system font, flip animations, session pulse, NEXT UP, daily recap. **Don't change what's there. Tighten how it's executed.**
 
-This is a production-hardening pass through the lens of Pentagram studio's design philosophy. Read every principle below. Apply each one to the existing codebase. The result should feel like the same board, but with every detail considered and resolved.
+This is a production-hardening pass through the lens of studio-grade design discipline. Read every principle below. Apply each one to the existing codebase. The result should feel like the same board, but with every detail considered and resolved.
 
 ---
 
@@ -12,7 +12,7 @@ This is a production-hardening pass through the lens of Pentagram studio's desig
 
 ### 1. EVERY ELEMENT EARNS ITS SPACE
 
-Pentagram never adds something because they can. Every element on screen must answer: **"What does this communicate that nothing else already communicates?"**
+Good design never adds something because they can. Every element on screen must answer: **"What does this communicate that nothing else already communicates?"**
 
 **Audit the board for redundancy:**
 - If track number AND domain AND status are all visible, does the user need all three simultaneously? Or can one be contextual (appears on hover/expand)?
@@ -26,7 +26,7 @@ Pentagram never adds something because they can. Every element on screen must an
 
 ### 2. TYPOGRAPHY HAS ONLY TWO VOLUMES: SHOUT AND WHISPER
 
-Pentagram's best work uses extreme contrast. The headline is massive. The caption is tiny. There is no middle. The middle is where design goes to feel "fine" instead of "intentional."
+The best design work uses extreme contrast. The headline is massive. The caption is tiny. There is no middle. The middle is where design goes to feel "fine" instead of "intentional."
 
 **Audit for middle-volume text:**
 - Project names (Disket Mono split-flap) = SHOUT. This is correct. Don't touch.
@@ -41,12 +41,12 @@ Pentagram's best work uses extreme contrast. The headline is massive. The captio
 
 ### 3. ONE GRID. EVERYTHING ON IT.
 
-Pentagram aligns obsessively. If the left edge of a project name is at 24px, then the left edge of EVERY piece of content is at 24px or at a deliberate, measured offset from it.
+Great design aligns obsessively. If the left edge of a project name is at 24px, then the left edge of EVERY piece of content is at 24px or at a deliberate, measured offset from it.
 
 **Audit alignment:**
 - The main content padding is 24px. Is every element's left edge at exactly 24px? Or do some elements (edit panel inputs, log entries, email rows) drift by 1-4px? Normalize.
 - Vertical rhythm: is the space between the top whisper line, the name, and the bottom whisper line mathematically consistent across every panel? Or does it vary by project name length? It should be fixed. The name truncates; the rhythm doesn't flex.
-- The 18px gutter between panels — is this the SAME unit used anywhere else? Pentagram uses a spatial scale. If 18px is the gutter, then padding should relate to it: 18, 24 (18×1.33), 36 (18×2), etc. Audit all spacing values against a base unit.
+- The 18px gutter between panels — is this the SAME unit used anywhere else? A strict spatial scale should be used. If 18px is the gutter, then padding should relate to it: 18, 24 (18×1.33), 36 (18×2), etc. Audit all spacing values against a base unit.
 
 **Action:** Define a spacing scale (e.g., 4, 8, 12, 18, 24, 36, 48) and force every padding, margin, and gap to snap to this scale. No arbitrary values.
 
@@ -71,7 +71,7 @@ One accent color: amber `#d4a012`. This is correct. But audit how it's used.
 
 ### 5. MOTION IS PUNCTUATION, NOT PROSE
 
-Pentagram uses motion sparingly. A single transition says "something changed." Constant animation says "I'm a tech demo."
+Good design uses motion sparingly. A single transition says "something changed." Constant animation says "I'm a tech demo."
 
 **Audit motion:**
 - The arrival cascade (rotateX flip on filter change) — this is punctuation. Good. Keep it.
@@ -85,13 +85,13 @@ Pentagram uses motion sparingly. A single transition says "something changed." C
 
 ### 6. THE EMPTY STATE IS A DESIGN
 
-Pentagram designs the blank page as carefully as the full page. What does the board look like with 0 projects? With 1? With 50?
+The blank page should be designed as carefully as the full page. What does the board look like with 0 projects? With 1? With 50?
 
 **Audit states:**
 - 0 projects: "NO ACTIVE DEPARTURES" — is this typographically resolved? Same care as a full board?
 - 1 project: does a single panel feel intentional, or does it feel like something broke?
 - The "No time blocked" section label — is its vertical spacing consistent with the panels above it?
-- Loading state: "LOADING" — should this have a split-flap animation? Or is static text more Pentagram (confident, unhurried)?
+- Loading state: "LOADING" — should this have a split-flap animation? Or is static text more confident (unhurried)?
 
 **Action:** Screenshot each state. If any feels unfinished, resolve it with the same level of detail as the primary view.
 
@@ -104,7 +104,7 @@ This is the final pass. The things no one will consciously see but everyone will
 **Checklist:**
 - **Touch targets:** Every tappable element on mobile is minimum 44×44px. Audit the status word, the flip icon, the filter buttons. If they're smaller, wrap them in a larger hit area.
 - **Text rendering:** `-webkit-font-smoothing: antialiased` on body. `text-rendering: optimizeLegibility` on display text. If not already present, add.
-- **Color consistency:** Every grey in the system should come from a defined palette, not ad-hoc hex values. How many distinct greys exist? If more than 6, consolidate. Pentagram uses 3-4 greys maximum.
+- **Color consistency:** Every grey in the system should come from a defined palette, not ad-hoc hex values. How many distinct greys exist? If more than 6, consolidate. A disciplined system uses 3-4 greys maximum.
 - **Border radius:** The panels use 6px. Is this the ONLY border radius in the system? If buttons use a different radius, normalize. One radius or zero. Not two.
 - **Opacity vs color:** Some shipped states use `opacity: 0.3`. Others use grey colors. Pick one method. Opacity is cheaper but affects child elements. Grey colors are precise. Choose and apply consistently.
 - **Focus states:** Tab through the interface. Do focused elements have a visible indicator? Amber outline on focus. Not default blue.
@@ -128,4 +128,4 @@ When the pass is done, show the board to someone and ask: "What do you notice?" 
 
 *"Simplicity is not the goal. It is the by-product of a good idea and modest expectations." — Paul Rand*
 
-*"Make it simple, but significant." — Don Draper (but Pentagram would actually agree)*
+*"Make it simple, but significant." — Don Draper*

@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from "react";
 // ─────────────────────────────────────────────────────────────
 // DEPARTURES v0.4 — DESIGN TIGHTENING PASS + FEATURES
 //
-// Pentagram principles applied: earned space, shout/whisper,
+// Design principles applied: earned space, shout/whisper,
 // one grid, color as information, motion as punctuation,
 // empty states designed, invisible details resolved.
 //
