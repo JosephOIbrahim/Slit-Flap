@@ -127,7 +127,7 @@ function Progress({ mile, of: total }) {
       <div style={{ width: "48px", height: "2px", background: G4, borderRadius: "4px", overflow: "hidden" }}>
         <div style={{ width: `${pct}%`, height: "100%", background: pct >= 100 ? "#5a8a5a" : ACCENT, transition: "width 0.48s ease" }} />
       </div>
-      <span style={sys("8px", G4)}>{mile}/{total}</span>
+      <span style={sys("9px", G4)}>{mile}/{total}</span>
     </div>
   );
 }
@@ -210,7 +210,7 @@ function EventEditPanel({ event, onUpdate, onDelete }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <input value={event.linkedProject || ""} onChange={e => u("linkedProject", e.target.value)} placeholder="Link to project ID" style={{ ...inp, width: "180px" }} />
         <button onClick={() => onDelete(event.id)}
-          style={{ ...sys("8px", G3), background: "transparent", border: `1px solid ${G4}`, padding: "8px 12px", cursor: "pointer", borderRadius: "4px" }}
+          style={{ ...sys("9px", G3), background: "transparent", border: `1px solid ${G4}`, padding: "8px 12px", cursor: "pointer", borderRadius: "4px" }}
           onMouseEnter={e => { e.currentTarget.style.borderColor = "#b04040"; e.currentTarget.style.color = "#b04040"; }}
           onMouseLeave={e => { e.currentTarget.style.borderColor = G4; e.currentTarget.style.color = G3; }}>
           DELETE
@@ -244,7 +244,7 @@ function EditPanel({ project, onUpdate, onDelete }) {
         </div>
       </div>
       <div style={{ display: "flex", gap: "4px", alignItems: "center", marginBottom: "12px" }}>
-        <span style={sys("7px", G3, { letterSpacing: "0.1em", marginRight: "8px" })}>BG</span>
+        <span style={sys("9px", G3, { letterSpacing: "0.1em", marginRight: "8px" })}>BG</span>
         {SWATCHES.map((c, i) => (
           <button key={i} onClick={() => u("bgColor", c)} style={{
             width: "18px", height: "18px", borderRadius: "4px",
@@ -256,9 +256,9 @@ function EditPanel({ project, onUpdate, onDelete }) {
           style={{ width: "18px", height: "18px", border: "none", background: "none", cursor: "pointer", padding: 0, marginLeft: "4px" }} />
       </div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <span style={sys("8px", G4)}>/{project.id} · {project.history.length} transitions</span>
+        <span style={sys("9px", G4)}>/{project.id} · {project.history.length} transitions</span>
         <button onClick={() => onDelete(project.id)}
-          style={{ ...sys("8px", G3), background: "transparent", border: `1px solid ${G4}`, padding: "8px 12px", cursor: "pointer", borderRadius: "4px" }}
+          style={{ ...sys("9px", G3), background: "transparent", border: `1px solid ${G4}`, padding: "8px 12px", cursor: "pointer", borderRadius: "4px" }}
           onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#b04040"; e.currentTarget.style.color = "#b04040"; }}
           onMouseLeave={(e) => { e.currentTarget.style.borderColor = G4; e.currentTarget.style.color = G3; }}>
           ARCHIVE
@@ -337,10 +337,10 @@ function ProjectRow({ project, onUpdate, onDelete, open, onToggle, showTime, isN
             {showTime && project.todayTime ? (
               <span style={sys("9px", G2, { fontWeight: 600 })}>{project.todayTime}</span>
             ) : (
-              <span style={sys("8px", G3)}>{project.track}</span>
+              <span style={sys("9px", G3)}>{project.track}</span>
             )}
-            <span style={sys("8px", G4, { letterSpacing: "0.08em" })}>{project.domain}</span>
-            <span style={sys("8px", G4)}>{relTime(project.lastTouched)}</span>
+            <span style={sys("9px", G4, { letterSpacing: "0.08em" })}>{project.domain}</span>
+            <span style={sys("9px", G4)}>{relTime(project.lastTouched)}</span>
           </div>
           <button onClick={cycleStatus} style={{
             background: "transparent", border: "none", fontFamily: MONO, fontSize: "9px", fontWeight: 600,
@@ -354,7 +354,7 @@ function ProjectRow({ project, onUpdate, onDelete, open, onToggle, showTime, isN
         </div>
         {/* Bottom whisper */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", minHeight: "12px" }}>
-          {project.next ? <span style={sys("8px", G3, { flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" })}>{project.next}</span> : <span />}
+          {project.next ? <span style={sys("9px", G3, { flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" })}>{project.next}</span> : <span />}
           {project.of > 0 && <Progress mile={project.mile} of={project.of} />}
         </div>
       </div>
@@ -395,8 +395,8 @@ function EventRow({ event, open, onToggle, onUpdate, onDelete }) {
           }}>{event.name}</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "12px", flexShrink: 0 }}>
-          {linked && <span style={sys("7px", G3, { letterSpacing: "0.08em" })}>→ {linked}</span>}
-          <span style={sys("7px", G4, { letterSpacing: "0.06em" })}>{event.endTime || event.end}</span>
+          {linked && <span style={sys("9px", G3, { letterSpacing: "0.08em" })}>→ {linked}</span>}
+          <span style={sys("9px", G4, { letterSpacing: "0.06em" })}>{event.endTime || event.end}</span>
         </div>
       </div>
       {open && <EventEditPanel event={event} onUpdate={onUpdate} onDelete={onDelete} />}
@@ -418,11 +418,11 @@ function EmailRow({ email }) {
       onMouseEnter={(e) => { e.currentTarget.style.background = G5; }}
       onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>
       <div style={{ display: "flex", alignItems: "center", gap: "12px", flex: 1, minWidth: 0 }}>
-        <span style={sys("8px", G3, { minWidth: "36px" })}>{email.time}</span>
-        <span style={sys("8px", G3, { fontWeight: 600 })}>{email.from}</span>
-        <span style={sys("8px", G4, { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 })}>{email.subject}</span>
+        <span style={sys("9px", G3, { minWidth: "36px" })}>{email.time}</span>
+        <span style={sys("9px", G3, { fontWeight: 600 })}>{email.from}</span>
+        <span style={sys("9px", G4, { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 })}>{email.subject}</span>
       </div>
-      {email.linkedProject && <span style={sys("7px", G4, { letterSpacing: "0.06em" })}>→ {email.linkedProject}</span>}
+      {email.linkedProject && <span style={sys("9px", G4, { letterSpacing: "0.06em" })}>→ {email.linkedProject}</span>}
     </div>
   );
 }
@@ -436,7 +436,7 @@ function NowLine() {
   const m = now.getMinutes().toString().padStart(2, "0");
   return (
     <div style={{ display: "flex", alignItems: "center", gap: "12px", padding: "4px 36px", margin: "4px 0" }}>
-      <span style={sys("8px", ACCENT, { fontWeight: 700 })}>NOW {h}:{m}</span>
+      <span style={sys("9px", ACCENT, { fontWeight: 700 })}>NOW {h}:{m}</span>
       <div style={{ flex: 1, height: "1px", background: `linear-gradient(to right, ${ACCENT}, transparent)` }} />
     </div>
   );
@@ -447,7 +447,7 @@ function NowLine() {
 function SectionLabel({ label }) {
   return (
     <div style={{ padding: "12px 36px 4px" }}>
-      <span style={sys("7px", G4, { letterSpacing: "0.14em", textTransform: "uppercase" })}>{label}</span>
+      <span style={sys("9px", G4, { letterSpacing: "0.14em", textTransform: "uppercase" })}>{label}</span>
     </div>
   );
 }
@@ -469,8 +469,8 @@ function LogPanel({ log, onAdd }) {
         <div style={{ maxHeight: "120px", overflowY: "auto" }}>
           {[...log].reverse().slice(0, 8).map((entry, i) => (
             <div key={i} style={{ display: "flex", gap: "8px", padding: "4px 0" }}>
-              <span style={sys("7px", G3, { minWidth: "36px", flexShrink: 0 })}>{relTime(entry.at)}</span>
-              <span style={sys("8px", G3)}>{entry.text}</span>
+              <span style={sys("9px", G3, { minWidth: "36px", flexShrink: 0 })}>{relTime(entry.at)}</span>
+              <span style={sys("9px", G3)}>{entry.text}</span>
             </div>
           ))}
         </div>
@@ -507,15 +507,15 @@ function RecapPanel({ projects, sessionMins, onClose }) {
         <div style={{ display: "flex", gap: "24px", marginBottom: "18px" }}>
           <div>
             <div style={sys("24px", WHITE, { fontWeight: 700, fontFamily: DISPLAY })}>{touched.length}</div>
-            <div style={sys("7px", G3, { letterSpacing: "0.1em", marginTop: "4px" })}>TOUCHED</div>
+            <div style={sys("9px", G3, { letterSpacing: "0.1em", marginTop: "4px" })}>TOUCHED</div>
           </div>
           <div>
             <div style={sys("24px", "#5a8a5a", { fontWeight: 700, fontFamily: DISPLAY })}>{shipped.length}</div>
-            <div style={sys("7px", G3, { letterSpacing: "0.1em", marginTop: "4px" })}>SHIPPED</div>
+            <div style={sys("9px", G3, { letterSpacing: "0.1em", marginTop: "4px" })}>SHIPPED</div>
           </div>
           <div>
             <div style={sys("24px", ACCENT, { fontWeight: 700, fontFamily: DISPLAY })}>{formatDuration(sessionMins)}</div>
-            <div style={sys("7px", G3, { letterSpacing: "0.1em", marginTop: "4px" })}>SESSION</div>
+            <div style={sys("9px", G3, { letterSpacing: "0.1em", marginTop: "4px" })}>SESSION</div>
           </div>
         </div>
 
@@ -524,7 +524,7 @@ function RecapPanel({ projects, sessionMins, onClose }) {
             {touched.map((p) => (
               <div key={p.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0" }}>
                 <span style={sys("9px", WHITE)}>{p.name}</span>
-                <span style={sys("8px", statusColor(p.status))}>{p.status}</span>
+                <span style={sys("9px", statusColor(p.status))}>{p.status}</span>
               </div>
             ))}
           </div>
@@ -671,6 +671,22 @@ export default function Departures() {
       .then(({ id }) => { fetch('/api/events').then(r => r.json()).then(setEvents); setOpenEventId(id); });
   };
 
+  // ─── Priority reorder ────────────────────────────────────
+  const moveProject = (direction) => {
+    if (!openId) return;
+    const idx = projects.findIndex(p => p.id === openId);
+    if (idx === -1) return;
+    const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= projects.length) return;
+    const a = projects[idx];
+    const b = projects[swapIdx];
+    // Swap tracks to change sort position
+    const newA = { ...a, track: b.track };
+    const newB = { ...b, track: a.track };
+    update(newA);
+    update(newB);
+  };
+
   const isToday = filter === "TODAY";
   const flapSize = parseInt(settings.fontSize) || 104;
   const flapAlign = settings.alignment || "left";
@@ -747,61 +763,62 @@ export default function Departures() {
       <div style={{ padding: "24px 24px 12px", borderBottom: `1px solid ${G4}` }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           {/* Left: title + date + pulse */}
-          <div style={{ flex: 1 }}>
+          <div>
             <h1 style={{ fontFamily: DISPLAY, fontSize: "16px", fontWeight: 400, color: WHITE, letterSpacing: "0.1em", margin: 0, lineHeight: 1, textTransform: "uppercase", textRendering: "optimizeLegibility" }}>
               {isToday ? "Today" : "Departures"}
             </h1>
             <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "4px" }}>
-              <div style={sys("7px", G4, { letterSpacing: "0.12em" })}>
+              <div style={sys("9px", G4, { letterSpacing: "0.12em" })}>
                 {isToday ? date : "USD-COMPOSED PROJECT STATE"}
               </div>
-              {/* Session pulse — dot only, duration on hover */}
               <div title={formatDuration(sessionMins)} style={{ width: "5px", height: "5px", borderRadius: "50%", background: sessionColor(sessionMins), transition: "background 0.3s ease", cursor: "default" }} />
             </div>
           </div>
 
-          {/* Center: weather widget */}
-          <div style={{ flex: 1, display: "flex", justifyContent: "center", alignItems: "flex-start" }}>
-            {weather && !zipEditing ? (
-              <div onClick={() => setZipEditing(true)} style={{ cursor: "pointer", textAlign: "center" }}>
-                <div style={sys("9px", G2, { fontWeight: 600 })}>{weather.temp}° {weather.desc.toUpperCase()}</div>
-                <div style={sys("7px", G4, { marginTop: "2px" })}>{weather.city}</div>
+          {/* Right: weather/zip + clock */}
+          <div style={{ display: "flex", alignItems: "flex-start", gap: "18px" }}>
+            {/* Weather / zip input */}
+            <div style={{ textAlign: "right", minWidth: "80px" }}>
+              {weather && !zipEditing ? (
+                <div onClick={() => setZipEditing(true)} style={{ cursor: "pointer" }}>
+                  <div style={sys("9px", G2, { fontWeight: 600, textAlign: "right" })}>{weather.temp}° {weather.desc.toUpperCase()}</div>
+                  <div style={sys("9px", G4, { marginTop: "2px", textAlign: "right" })}>{weather.city}</div>
+                </div>
+              ) : (
+                <div>
+                  <input
+                    autoFocus={zipEditing}
+                    value={settings.zip}
+                    onChange={e => { const v = e.target.value.replace(/\D/g,'').slice(0,5); saveSetting("zip", v); }}
+                    onBlur={() => {
+                      if (settings.zip.length === 5) {
+                        fetchWeather(settings.zip).then(w => { if (w) { setWeather(w); setZipEditing(false); } });
+                      }
+                    }}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && settings.zip.length === 5) {
+                        fetchWeather(settings.zip).then(w => { if (w) { setWeather(w); setZipEditing(false); } });
+                      }
+                      if (e.key === 'Escape') { setZipEditing(false); }
+                    }}
+                    placeholder="ZIP"
+                    style={{ ...sys("10px", G2), background: "transparent", border: `1px solid ${G4}`, borderRadius: "4px", outline: "none", width: "56px", textAlign: "center", letterSpacing: "0.12em", padding: "4px 8px" }}
+                  />
+                </div>
+              )}
+            </div>
+            {/* Clock + interval */}
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontFamily: MONO, fontSize: "18px", fontWeight: 800, color: G2, letterSpacing: "0.06em", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{time}</div>
+              <div style={{ display: "flex", gap: "0px", marginTop: "4px", justifyContent: "flex-end" }}>
+                {intervals.map((v) => (
+                  <button key={v} onClick={() => setInterval_(v)} style={{
+                    background: "transparent", border: "none", fontFamily: MONO, fontSize: "6px",
+                    color: interval === v ? G2 : G5, cursor: "pointer", padding: "4px 4px",
+                    letterSpacing: "0", lineHeight: 1, transition: "color 0.12s",
+                  }}>{v < 1 ? `.${String(v).split(".")[1]}` : "1s"}</button>
+                ))}
               </div>
-            ) : (
-              <input
-                autoFocus={zipEditing}
-                value={settings.zip}
-                onChange={e => { const v = e.target.value.replace(/\D/g,'').slice(0,5); saveSetting("zip", v); }}
-                onBlur={() => {
-                  if (settings.zip.length === 5) {
-                    fetchWeather(settings.zip).then(w => { if (w) { setWeather(w); setZipEditing(false); } });
-                  } else {
-                    setZipEditing(false);
-                  }
-                }}
-                onKeyDown={e => {
-                  if (e.key === 'Enter' && settings.zip.length === 5) {
-                    fetchWeather(settings.zip).then(w => { if (w) { setWeather(w); setZipEditing(false); } });
-                  }
-                  if (e.key === 'Escape') setZipEditing(false);
-                }}
-                placeholder="ZIP"
-                style={{ ...sys("9px", G3), background: "transparent", border: "none", outline: "none", width: "48px", textAlign: "center", letterSpacing: "0.12em" }}
-              />
-            )}
-          </div>
-
-          {/* Right: clock + interval selector */}
-          <div style={{ flex: 1, textAlign: "right" }}>
-            <div style={{ fontFamily: MONO, fontSize: "18px", fontWeight: 800, color: G2, letterSpacing: "0.06em", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{time}</div>
-            <div style={{ display: "flex", gap: "0px", marginTop: "4px", justifyContent: "flex-end" }}>
-              {intervals.map((v) => (
-                <button key={v} onClick={() => setInterval_(v)} style={{
-                  background: "transparent", border: "none", fontFamily: MONO, fontSize: "6px",
-                  color: interval === v ? G2 : G5, cursor: "pointer", padding: "4px 4px",
-                  letterSpacing: "0", lineHeight: 1, transition: "color 0.12s",
-                }}>{v < 1 ? `.${String(v).split(".")[1]}` : "1s"}</button>
-              ))}
             </div>
           </div>
         </div>
@@ -812,7 +829,7 @@ export default function Departures() {
         <div style={{ display: "flex" }}>
           {filters.map((f) => (
             <button key={f} onClick={() => setFilter(f)} style={{
-              background: "transparent", border: "none", fontFamily: MONO, fontSize: "8px",
+              background: "transparent", border: "none", fontFamily: MONO, fontSize: "11px",
               fontWeight: filter === f ? 700 : 400, color: filter === f ? WHITE : G4,
               letterSpacing: "0.1em", padding: "8px 12px", cursor: "pointer", transition: "color 0.12s",
             }}>{f}</button>
@@ -823,18 +840,19 @@ export default function Departures() {
           <div style={{ display: "flex", gap: "0px" }}>
             {FONT_SIZES.map(fs => (
               <button key={fs.label} onClick={() => saveSetting("fontSize", String(fs.value))} style={{
-                background: "transparent", border: "none", fontFamily: MONO, fontSize: "7px",
-                color: parseInt(settings.fontSize) === fs.value ? G2 : G5,
-                cursor: "pointer", padding: "4px 8px", letterSpacing: "0.06em", transition: "color 0.12s",
+                background: "transparent", border: "none", fontFamily: MONO, fontSize: "11px",
+                color: parseInt(settings.fontSize) === fs.value ? G1 : G3,
+                cursor: "pointer", padding: "8px 8px", letterSpacing: "0.06em", transition: "color 0.12s",
               }}>{fs.label}</button>
             ))}
           </div>
-          <div style={{ display: "flex", gap: "0px", marginLeft: "8px" }}>
+          <div style={{ width: "1px", height: "12px", background: G4, marginLeft: "4px", marginRight: "4px" }} />
+          <div style={{ display: "flex", gap: "0px" }}>
             {["left", "center", "right"].map(a => (
               <button key={a} onClick={() => saveSetting("alignment", a)} style={{
-                background: "transparent", border: "none", fontFamily: MONO, fontSize: "7px",
-                color: settings.alignment === a ? G2 : G5,
-                cursor: "pointer", padding: "4px 8px", letterSpacing: "0.06em", transition: "color 0.12s",
+                background: "transparent", border: "none", fontFamily: MONO, fontSize: "11px",
+                color: settings.alignment === a ? G1 : G3,
+                cursor: "pointer", padding: "8px 8px", letterSpacing: "0.06em", transition: "color 0.12s",
               }}>{a === "left" ? "◁" : a === "center" ? "·" : "▷"}</button>
             ))}
           </div>
@@ -908,7 +926,7 @@ export default function Departures() {
           <button onClick={addEvent} title="Add event" style={{
             width: "36px", height: "36px", borderRadius: "50%",
             background: G5, border: `1px solid ${G4}`,
-            color: G3, fontFamily: MONO, fontSize: "7px", fontWeight: 700,
+            color: G3, fontFamily: MONO, fontSize: "9px", fontWeight: 700,
             cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
             transition: "all 0.15s", letterSpacing: "0.02em",
           }}
@@ -928,6 +946,24 @@ export default function Departures() {
           onMouseLeave={(e) => { e.currentTarget.style.borderColor = G4; e.currentTarget.style.color = G3; }}>
           REC
         </button>
+        <button onClick={() => moveProject("up")} title="Move up" style={{
+          width: "44px", height: "44px", borderRadius: "50%",
+          background: openId ? G5 : G5, border: openId ? `1px solid ${G4}` : "none",
+          color: openId ? G2 : G4, fontFamily: MONO, fontSize: "14px", fontWeight: 400,
+          cursor: openId ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center",
+          transition: "all 0.15s", lineHeight: 1,
+        }}
+          onMouseEnter={(e) => { if (openId) { e.currentTarget.style.borderColor = G2; e.currentTarget.style.color = WHITE; } }}
+          onMouseLeave={(e) => { e.currentTarget.style.borderColor = openId ? G4 : "transparent"; e.currentTarget.style.color = openId ? G2 : G4; }}>▲</button>
+        <button onClick={() => moveProject("down")} title="Move down" style={{
+          width: "44px", height: "44px", borderRadius: "50%",
+          background: openId ? G5 : G5, border: openId ? `1px solid ${G4}` : "none",
+          color: openId ? G2 : G4, fontFamily: MONO, fontSize: "14px", fontWeight: 400,
+          cursor: openId ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center",
+          transition: "all 0.15s", lineHeight: 1,
+        }}
+          onMouseEnter={(e) => { if (openId) { e.currentTarget.style.borderColor = G2; e.currentTarget.style.color = WHITE; } }}
+          onMouseLeave={(e) => { e.currentTarget.style.borderColor = openId ? G4 : "transparent"; e.currentTarget.style.color = openId ? G2 : G4; }}>▼</button>
         <button onClick={() => openId && remove(openId)} style={{
           width: "44px", height: "44px", borderRadius: "50%",
           background: openId ? G4 : G5, border: "none",
@@ -954,7 +990,7 @@ export default function Departures() {
 
       {/* FOOTER */}
       <div style={{ padding: "24px 24px 48px", textAlign: "center" }}>
-        <span style={sys("7px", G5, { letterSpacing: "0.2em" })}>DEPARTURES 0.4 · USD-COMPOSED · SOLARI PROTOCOL</span>
+        <span style={sys("9px", G5, { letterSpacing: "0.2em" })}>DEPARTURES 0.4 · USD-COMPOSED · SOLARI PROTOCOL</span>
       </div>
     </div>
   );
