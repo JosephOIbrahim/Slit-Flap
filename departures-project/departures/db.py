@@ -2,6 +2,7 @@
 
 import json
 import os
+import secrets
 import uuid
 from datetime import datetime, timezone, date
 from pathlib import Path
@@ -110,6 +111,14 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS viewers (
+    id TEXT PRIMARY KEY,
+    email TEXT NOT NULL,
+    token TEXT UNIQUE NOT NULL,
+    created_at TEXT,
+    last_seen TEXT
 );
 """
 
@@ -220,6 +229,7 @@ async def seed_db() -> None:
             DELETE FROM sessions;
             DELETE FROM events;
             DELETE FROM settings;
+            DELETE FROM viewers;
             DELETE FROM projects;
         """)
         await _insert_seeds(db)
@@ -578,5 +588,101 @@ async def update_settings(data: dict) -> dict:
         cursor = await db.execute("SELECT key, value FROM settings")
         rows = await cursor.fetchall()
         return {r["key"]: r["value"] for r in rows}
+    finally:
+        await db.close()
+
+
+# ── Viewer CRUD ──────────────────────────────────────────────────
+
+async def add_viewer(email: str) -> dict:
+    """Add a viewer by email. Generates a unique token. Returns {id, email, token, createdAt}."""
+    db = await _conn()
+    try:
+        # Check if email already exists
+        cursor = await db.execute(
+            "SELECT id, email, token, created_at FROM viewers WHERE email = ?",
+            (email,),
+        )
+        existing = await cursor.fetchone()
+        if existing:
+            return {
+                "id": existing["id"],
+                "email": existing["email"],
+                "token": existing["token"],
+                "createdAt": existing["created_at"],
+            }
+
+        now = _now()
+        vid = uuid.uuid4().hex[:12]
+        token = secrets.token_urlsafe(24)
+        await db.execute(
+            "INSERT INTO viewers (id, email, token, created_at) VALUES (?, ?, ?, ?)",
+            (vid, email, token, now),
+        )
+        await db.commit()
+        return {"id": vid, "email": email, "token": token, "createdAt": now}
+    finally:
+        await db.close()
+
+
+async def list_viewers() -> list[dict]:
+    """Return all viewers as [{id, email, token, createdAt, lastSeen}]."""
+    db = await _conn()
+    try:
+        cursor = await db.execute(
+            "SELECT id, email, token, created_at, last_seen FROM viewers ORDER BY created_at DESC"
+        )
+        rows = await cursor.fetchall()
+        return [
+            {
+                "id": r["id"],
+                "email": r["email"],
+                "token": r["token"],
+                "createdAt": r["created_at"],
+                "lastSeen": r["last_seen"],
+            }
+            for r in rows
+        ]
+    finally:
+        await db.close()
+
+
+async def remove_viewer(vid: str) -> dict:
+    """Delete a viewer. Returns {id, deleted: True}."""
+    db = await _conn()
+    try:
+        await db.execute("DELETE FROM viewers WHERE id = ?", (vid,))
+        await db.commit()
+        return {"id": vid, "deleted": True}
+    finally:
+        await db.close()
+
+
+async def get_viewer_by_token(token: str) -> dict | None:
+    """Look up a viewer by token. Returns {id, email, token} or None."""
+    db = await _conn()
+    try:
+        cursor = await db.execute(
+            "SELECT id, email, token FROM viewers WHERE token = ?",
+            (token,),
+        )
+        row = await cursor.fetchone()
+        if row:
+            return {"id": row["id"], "email": row["email"], "token": row["token"]}
+        return None
+    finally:
+        await db.close()
+
+
+async def touch_viewer(vid: str) -> None:
+    """Update last_seen timestamp for a viewer."""
+    now = _now()
+    db = await _conn()
+    try:
+        await db.execute(
+            "UPDATE viewers SET last_seen = ? WHERE id = ?",
+            (now, vid),
+        )
+        await db.commit()
     finally:
         await db.close()

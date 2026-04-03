@@ -277,7 +277,7 @@ function EditPanel({ project, onUpdate, onDelete }) {
 
 // ─── PROJECT ROW (TIER 1 — SHOUT) ───────────────────────────
 
-function ProjectRow({ project, onUpdate, onDelete, open, onToggle, showTime, isNextUp, flapSize, flapAlign }) {
+function ProjectRow({ project, onUpdate, onDelete, open, onToggle, showTime, isNextUp, flapSize, flapAlign, readOnly }) {
   const shipped = project.status === "SHIPPED";
   const [flipping, setFlipping] = useState(false);
 
@@ -288,6 +288,7 @@ function ProjectRow({ project, onUpdate, onDelete, open, onToggle, showTime, isN
 
   const cycleStatus = (e) => {
     e.stopPropagation();
+    if (readOnly) return;
     const i = STATUSES.indexOf(project.status);
     const next = STATUSES[(i + 1) % STATUSES.length];
     triggerFlip();
@@ -301,7 +302,7 @@ function ProjectRow({ project, onUpdate, onDelete, open, onToggle, showTime, isN
   const handleToggle = () => {
     if (!open) {
       triggerFlip();
-      onUpdate({ ...project, lastTouched: new Date().toISOString() });
+      if (!readOnly) onUpdate({ ...project, lastTouched: new Date().toISOString() });
     }
     onToggle();
   };
@@ -351,7 +352,7 @@ function ProjectRow({ project, onUpdate, onDelete, open, onToggle, showTime, isN
           </div>
           <button onClick={cycleStatus} style={{
             background: "transparent", border: "none", fontFamily: MONO, fontSize: "9px", fontWeight: 600,
-            color: statusColor(project.status), letterSpacing: "0.1em", cursor: "pointer",
+            color: statusColor(project.status), letterSpacing: "0.1em", cursor: readOnly ? "default" : "pointer",
             padding: "8px 4px", margin: "-8px -4px",
           }}>{project.status}</button>
         </div>
@@ -369,8 +370,8 @@ function ProjectRow({ project, onUpdate, onDelete, open, onToggle, showTime, isN
       {/* Edit panel + log */}
       {open && (
         <>
-          <EditPanel project={project} onUpdate={onUpdate} onDelete={onDelete} />
-          <LogPanel log={project.log || []} onAdd={addLogEntry} />
+          {!readOnly && <EditPanel project={project} onUpdate={onUpdate} onDelete={onDelete} />}
+          <LogPanel log={project.log || []} onAdd={addLogEntry} readOnly={readOnly} />
         </>
       )}
     </div>
@@ -379,7 +380,7 @@ function ProjectRow({ project, onUpdate, onDelete, open, onToggle, showTime, isN
 
 // ─── EVENT ROW (TIER 2 — SPEAK) ─────────────────────────────
 
-function EventRow({ event, open, onToggle, onUpdate, onDelete }) {
+function EventRow({ event, open, onToggle, onUpdate, onDelete, readOnly }) {
   const linked = event.linkedProject;
   return (
     <div style={{
@@ -406,7 +407,7 @@ function EventRow({ event, open, onToggle, onUpdate, onDelete }) {
           <span style={sys("9px", G4, { letterSpacing: "0.06em" })}>{event.endTime || event.end}</span>
         </div>
       </div>
-      {open && <EventEditPanel event={event} onUpdate={onUpdate} onDelete={onDelete} />}
+      {open && !readOnly && <EventEditPanel event={event} onUpdate={onUpdate} onDelete={onDelete} />}
     </div>
   );
 }
@@ -461,17 +462,19 @@ function SectionLabel({ label }) {
 
 // ─── LOG PANEL ───────────────────────────────────────────────
 
-function LogPanel({ log, onAdd }) {
+function LogPanel({ log, onAdd, readOnly }) {
   const [text, setText] = useState("");
   return (
     <div style={{ padding: "0 24px 18px", background: G6 }} onClick={(e) => e.stopPropagation()}>
-      <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
-        <input value={text} onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") { onAdd(text); setText(""); } }}
-          placeholder="Log a note..." style={{ ...inp, flex: 1 }} />
-        <button onClick={() => { onAdd(text); setText(""); }}
-          style={{ ...inp, width: "auto", cursor: "pointer", color: ACCENT, padding: "8px 12px" }}>+</button>
-      </div>
+      {!readOnly && (
+        <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
+          <input value={text} onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") { onAdd(text); setText(""); } }}
+            placeholder="Log a note..." style={{ ...inp, flex: 1 }} />
+          <button onClick={() => { onAdd(text); setText(""); }}
+            style={{ ...inp, width: "auto", cursor: "pointer", color: ACCENT, padding: "8px 12px" }}>+</button>
+        </div>
+      )}
       {log.length > 0 && (
         <div style={{ maxHeight: "120px", overflowY: "auto" }}>
           {[...log].reverse().slice(0, 8).map((entry, i) => (
@@ -544,6 +547,69 @@ function RecapPanel({ projects, sessionMins, onClose }) {
   );
 }
 
+// ─── SHARE PANEL ────────────────────────────────────────────
+
+function SharePanel({ viewers, onAdd, onRemove, onClose, newEmail, setNewEmail }) {
+  return (
+    <div style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 200,
+      display: "flex", alignItems: "center", justifyContent: "center", padding: "24px",
+    }} onClick={onClose}>
+      <div style={{
+        background: G5, borderRadius: "4px", padding: "36px", maxWidth: "480px", width: "100%",
+        border: `1px solid ${G4}`,
+      }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "18px" }}>
+          <span style={{ fontFamily: DISPLAY, fontSize: "18px", color: WHITE, letterSpacing: "0.1em", textTransform: "uppercase", textRendering: "optimizeLegibility" }}>Share Board</span>
+          <button onClick={onClose} style={{ background: "transparent", border: "none", color: G3, fontSize: "18px", cursor: "pointer", padding: "8px", margin: "-8px" }}>×</button>
+        </div>
+
+        {/* Add viewer */}
+        <div style={{ display: "flex", gap: "8px", marginBottom: "18px" }}>
+          <input value={newEmail} onChange={e => setNewEmail(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") onAdd(); }}
+            placeholder="viewer@email.com" style={{ ...inp, flex: 1 }} />
+          <button onClick={onAdd}
+            style={{ ...inp, width: "auto", cursor: "pointer", color: ACCENT, padding: "8px 12px" }}>INVITE</button>
+        </div>
+
+        {/* Viewer list */}
+        {viewers.length > 0 ? (
+          <div style={{ borderTop: `1px solid ${G4}`, paddingTop: "12px" }}>
+            {viewers.map(v => (
+              <div key={v.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0" }}>
+                <div>
+                  <div style={sys("9px", WHITE)}>{v.email}</div>
+                  <div style={sys("9px", G4, { marginTop: "2px" })}>{v.lastSeen ? `Last seen: ${relTime(v.lastSeen)}` : "Never visited"}</div>
+                </div>
+                <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                  <button onClick={() => {
+                    const url = `${window.location.origin}/join/${v.token}`;
+                    navigator.clipboard.writeText(url).catch(() => {});
+                  }}
+                    style={{ ...sys("9px", G3), background: "transparent", border: `1px solid ${G4}`, padding: "4px 12px", cursor: "pointer", borderRadius: "4px" }}
+                    onMouseEnter={e => { e.currentTarget.style.color = WHITE; }}
+                    onMouseLeave={e => { e.currentTarget.style.color = G3; }}>
+                    COPY LINK
+                  </button>
+                  <button onClick={() => onRemove(v.id)}
+                    style={{ ...sys("9px", G3), background: "transparent", border: `1px solid ${G4}`, padding: "4px 12px", cursor: "pointer", borderRadius: "4px" }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = "#b04040"; e.currentTarget.style.color = "#b04040"; }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = G4; e.currentTarget.style.color = G3; }}>
+                    REVOKE
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={sys("9px", G3, { textAlign: "center", padding: "18px 0" })}>No viewers yet. Invite someone to share your board.</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── MAIN ────────────────────────────────────────────────────
 
 export default function Departures() {
@@ -561,6 +627,10 @@ export default function Departures() {
   const [weather, setWeather] = useState(null);
   const [zipEditing, setZipEditing] = useState(false);
   const [zipDraft, setZipDraft] = useState("");
+  const [role, setRole] = useState("owner");
+  const [showShare, setShowShare] = useState(false);
+  const [viewers, setViewers] = useState([]);
+  const [newViewerEmail, setNewViewerEmail] = useState("");
   const prevFilter = useRef(filter);
 
   useEffect(() => {
@@ -624,6 +694,26 @@ export default function Departures() {
     const t = setInterval(fetchSession, 60000);
     return () => clearInterval(t);
   }, []);
+
+  // Load role
+  useEffect(() => {
+    fetch('/api/me').then(r => r.json()).then(d => setRole(d.role)).catch(() => {});
+  }, []);
+
+  const isViewer = role === "viewer";
+
+  const loadViewers = () => fetch('/api/viewers').then(r => r.json()).then(setViewers).catch(() => {});
+
+  const addViewer = () => {
+    if (!newViewerEmail.trim() || !newViewerEmail.includes("@")) return;
+    fetch('/api/viewers', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ email: newViewerEmail }) })
+      .then(r => r.json())
+      .then(() => { loadViewers(); setNewViewerEmail(""); });
+  };
+
+  const removeViewer = (id) => {
+    fetch(`/api/viewers/${id}`, { method: 'DELETE' }).then(() => loadViewers());
+  };
 
   useEffect(() => { if (prevFilter.current !== filter) { setAnimKey((k) => k + 1); prevFilter.current = filter; } }, [filter]);
   useEffect(() => { if (ready) setAnimKey((k) => k + 1); }, [ready]);
@@ -885,6 +975,13 @@ export default function Departures() {
         </div>
       </div>
 
+      {/* VIEWER BANNER */}
+      {isViewer && (
+        <div style={{ padding: "8px 24px", background: G6, borderBottom: `1px solid ${G4}`, textAlign: "center" }}>
+          <span style={sys("9px", G3, { letterSpacing: "0.08em" })}>VIEWING · READ ONLY</span>
+        </div>
+      )}
+
       {/* BOARD */}
       <div style={{ perspective: "800px", display: "flex", flexDirection: "column", gap: "18px", padding: "18px 0" }}>
 
@@ -896,7 +993,7 @@ export default function Departures() {
                 <div key={item.data.id} className="arrive" style={{ animationDelay: `${i * interval}s`, padding: "0 12px" }}>
                   <EventRow event={item.data} open={openEventId === item.data.id}
                     onToggle={() => setOpenEventId(openEventId === item.data.id ? null : item.data.id)}
-                    onUpdate={updateEvent} onDelete={removeEvent} />
+                    onUpdate={updateEvent} onDelete={removeEvent} readOnly={isViewer} />
                 </div>
               );
               if (item.type === "email") return (
@@ -908,7 +1005,7 @@ export default function Departures() {
                 <div key={`${item.data.id}-${animKey}`} className="arrive" style={{ animationDelay: `${i * interval}s`, padding: "0 12px" }}>
                   <ProjectRow project={item.data} onUpdate={update} onDelete={remove} open={openId === item.data.id}
                     onToggle={() => setOpenId(openId === item.data.id ? null : item.data.id)} showTime isNextUp={item.data.id === nextUpId}
-                    flapSize={flapSize} flapAlign={flapAlign} />
+                    flapSize={flapSize} flapAlign={flapAlign} readOnly={isViewer} />
                 </div>
               );
               return null;
@@ -921,7 +1018,7 @@ export default function Departures() {
                   <div key={`${p.id}-${animKey}`} className="arrive" style={{ animationDelay: `${(todayTimeline.length + i) * interval}s`, padding: "0 12px" }}>
                     <ProjectRow project={p} onUpdate={update} onDelete={remove} open={openId === p.id}
                       onToggle={() => setOpenId(openId === p.id ? null : p.id)} showTime={false} isNextUp={p.id === nextUpId}
-                      flapSize={flapSize} flapAlign={flapAlign} />
+                      flapSize={flapSize} flapAlign={flapAlign} readOnly={isViewer} />
                   </div>
                 ))}
               </>
@@ -933,7 +1030,7 @@ export default function Departures() {
               <div key={`${p.id}-${animKey}`} className="arrive" style={{ animationDelay: `${i * interval}s`, padding: "0 12px" }}>
                 <ProjectRow project={p} onUpdate={update} onDelete={remove} open={openId === p.id}
                   onToggle={() => setOpenId(openId === p.id ? null : p.id)} showTime={false} isNextUp={p.id === nextUpId}
-                  flapSize={flapSize} flapAlign={flapAlign} />
+                  flapSize={flapSize} flapAlign={flapAlign} readOnly={isViewer} />
               </div>
             ))}
           </>
@@ -948,7 +1045,7 @@ export default function Departures() {
 
       {/* ACTIONS */}
       <div style={{ position: "fixed", bottom: "24px", right: "24px", display: "flex", gap: "8px", zIndex: 50 }}>
-        {isToday && (
+        {!isViewer && isToday && (
           <button onClick={addEvent} title="Add event" style={{
             width: "36px", height: "36px", borderRadius: "50%",
             background: G5, border: `1px solid ${G4}`,
@@ -959,6 +1056,19 @@ export default function Departures() {
             onMouseEnter={(e) => { e.currentTarget.style.borderColor = G2; e.currentTarget.style.color = G2; }}
             onMouseLeave={(e) => { e.currentTarget.style.borderColor = G4; e.currentTarget.style.color = G3; }}>
             EV+
+          </button>
+        )}
+        {!isViewer && (
+          <button onClick={() => { loadViewers(); setShowShare(true); }} title="Share board" style={{
+            width: "44px", height: "44px", borderRadius: "50%",
+            background: G5, border: `1px solid ${G4}`,
+            color: G3, fontFamily: MONO, fontSize: "9px", fontWeight: 700,
+            cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+            transition: "all 0.15s", letterSpacing: "0.02em",
+          }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = G2; e.currentTarget.style.color = G2; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = G4; e.currentTarget.style.color = G3; }}>
+            SHR
           </button>
         )}
         <button onClick={() => setShowRecap(true)} style={{
@@ -972,47 +1082,59 @@ export default function Departures() {
           onMouseLeave={(e) => { e.currentTarget.style.borderColor = G4; e.currentTarget.style.color = G3; }}>
           REC
         </button>
-        <button onClick={() => moveProject("up")} title="Move up" style={{
-          width: "44px", height: "44px", borderRadius: "50%",
-          background: openId ? G5 : G5, border: openId ? `1px solid ${G4}` : "none",
-          color: openId ? G2 : G4, fontFamily: MONO, fontSize: "14px", fontWeight: 400,
-          cursor: openId ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center",
-          transition: "all 0.15s", lineHeight: 1,
-        }}
-          onMouseEnter={(e) => { if (openId) { e.currentTarget.style.borderColor = G2; e.currentTarget.style.color = WHITE; } }}
-          onMouseLeave={(e) => { e.currentTarget.style.borderColor = openId ? G4 : "transparent"; e.currentTarget.style.color = openId ? G2 : G4; }}>▲</button>
-        <button onClick={() => moveProject("down")} title="Move down" style={{
-          width: "44px", height: "44px", borderRadius: "50%",
-          background: openId ? G5 : G5, border: openId ? `1px solid ${G4}` : "none",
-          color: openId ? G2 : G4, fontFamily: MONO, fontSize: "14px", fontWeight: 400,
-          cursor: openId ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center",
-          transition: "all 0.15s", lineHeight: 1,
-        }}
-          onMouseEnter={(e) => { if (openId) { e.currentTarget.style.borderColor = G2; e.currentTarget.style.color = WHITE; } }}
-          onMouseLeave={(e) => { e.currentTarget.style.borderColor = openId ? G4 : "transparent"; e.currentTarget.style.color = openId ? G2 : G4; }}>▼</button>
-        <button onClick={() => openId && remove(openId)} style={{
-          width: "44px", height: "44px", borderRadius: "50%",
-          background: openId ? G4 : G5, border: "none",
-          color: openId ? WHITE : G3, fontFamily: DISPLAY, fontSize: "22px", fontWeight: 300,
-          cursor: openId ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center",
-          transition: "all 0.15s", lineHeight: 1, paddingBottom: "2px",
-        }}
-          onMouseEnter={(e) => { if (openId) { e.currentTarget.style.background = "#b04040"; e.currentTarget.style.color = "#000"; } }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = openId ? G4 : G5; e.currentTarget.style.color = openId ? WHITE : G3; }}>−</button>
-        <button onClick={add} style={{
-          width: "44px", height: "44px", borderRadius: "50%",
-          background: ACCENT, border: "none", color: "#000",
-          fontFamily: DISPLAY, fontSize: "22px", fontWeight: 500, cursor: "pointer",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          transition: "all 0.15s", lineHeight: 1, paddingBottom: "2px",
-          boxShadow: `0 4px 18px ${ACCENT}33`,
-        }}
-          onMouseEnter={(e) => e.currentTarget.style.transform = "scale(1.06)"}
-          onMouseLeave={(e) => e.currentTarget.style.transform = "scale(1)"}>+</button>
+        {!isViewer && (
+          <button onClick={() => moveProject("up")} title="Move up" style={{
+            width: "44px", height: "44px", borderRadius: "50%",
+            background: openId ? G5 : G5, border: openId ? `1px solid ${G4}` : "none",
+            color: openId ? G2 : G4, fontFamily: MONO, fontSize: "14px", fontWeight: 400,
+            cursor: openId ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center",
+            transition: "all 0.15s", lineHeight: 1,
+          }}
+            onMouseEnter={(e) => { if (openId) { e.currentTarget.style.borderColor = G2; e.currentTarget.style.color = WHITE; } }}
+            onMouseLeave={(e) => { e.currentTarget.style.borderColor = openId ? G4 : "transparent"; e.currentTarget.style.color = openId ? G2 : G4; }}>▲</button>
+        )}
+        {!isViewer && (
+          <button onClick={() => moveProject("down")} title="Move down" style={{
+            width: "44px", height: "44px", borderRadius: "50%",
+            background: openId ? G5 : G5, border: openId ? `1px solid ${G4}` : "none",
+            color: openId ? G2 : G4, fontFamily: MONO, fontSize: "14px", fontWeight: 400,
+            cursor: openId ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center",
+            transition: "all 0.15s", lineHeight: 1,
+          }}
+            onMouseEnter={(e) => { if (openId) { e.currentTarget.style.borderColor = G2; e.currentTarget.style.color = WHITE; } }}
+            onMouseLeave={(e) => { e.currentTarget.style.borderColor = openId ? G4 : "transparent"; e.currentTarget.style.color = openId ? G2 : G4; }}>▼</button>
+        )}
+        {!isViewer && (
+          <button onClick={() => openId && remove(openId)} style={{
+            width: "44px", height: "44px", borderRadius: "50%",
+            background: openId ? G4 : G5, border: "none",
+            color: openId ? WHITE : G3, fontFamily: DISPLAY, fontSize: "22px", fontWeight: 300,
+            cursor: openId ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center",
+            transition: "all 0.15s", lineHeight: 1, paddingBottom: "2px",
+          }}
+            onMouseEnter={(e) => { if (openId) { e.currentTarget.style.background = "#b04040"; e.currentTarget.style.color = "#000"; } }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = openId ? G4 : G5; e.currentTarget.style.color = openId ? WHITE : G3; }}>−</button>
+        )}
+        {!isViewer && (
+          <button onClick={add} style={{
+            width: "44px", height: "44px", borderRadius: "50%",
+            background: ACCENT, border: "none", color: "#000",
+            fontFamily: DISPLAY, fontSize: "22px", fontWeight: 500, cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            transition: "all 0.15s", lineHeight: 1, paddingBottom: "2px",
+            boxShadow: `0 4px 18px ${ACCENT}33`,
+          }}
+            onMouseEnter={(e) => e.currentTarget.style.transform = "scale(1.06)"}
+            onMouseLeave={(e) => e.currentTarget.style.transform = "scale(1)"}>+</button>
+        )}
       </div>
 
       {/* RECAP MODAL */}
       {showRecap && <RecapPanel projects={projects} sessionMins={sessionMins} onClose={() => setShowRecap(false)} />}
+
+      {/* SHARE MODAL */}
+      {showShare && <SharePanel viewers={viewers} onAdd={addViewer} onRemove={removeViewer}
+        onClose={() => setShowShare(false)} newEmail={newViewerEmail} setNewEmail={setNewViewerEmail} />}
 
       {/* FOOTER */}
       <div style={{ padding: "24px 24px 48px", textAlign: "center" }}>

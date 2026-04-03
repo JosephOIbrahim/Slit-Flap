@@ -49,9 +49,10 @@ def _open_browser(port: int, delay: float = 1.5) -> None:
 
 @click.group(invoke_without_command=True)
 @click.option("--port", default=4040, show_default=True, help="Port to run the server on.")
+@click.option("--host", default="127.0.0.1", show_default=True, help="Host to bind to. Use 0.0.0.0 for network sharing.")
 @click.option("--no-browser", is_flag=True, default=False, help="Start server without opening the browser.")
 @click.pass_context
-def cli(ctx, port: int, no_browser: bool) -> None:
+def cli(ctx, port: int, host: str, no_browser: bool) -> None:
     """DEPARTURES — a project manager that looks like a departure board."""
     if ctx.invoked_subcommand is not None:
         return
@@ -59,6 +60,17 @@ def cli(ctx, port: int, no_browser: bool) -> None:
     # ── Print startup info ───────────────────────────────────────
     click.echo(BANNER)
     click.echo(f"  {WHITE}→ Server:{RESET}  http://localhost:{port}")
+    if host == "0.0.0.0":
+        import socket
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            lan_ip = s.getsockname()[0]
+            s.close()
+        except Exception:
+            lan_ip = "YOUR-IP"
+        click.echo(f"  {WHITE}→ Share:{RESET}   http://{lan_ip}:{port}")
+        click.echo(f"  {DIM}  Add viewers in the board's Share panel{RESET}")
     if no_browser:
         click.echo(f"  {DIM}→ Board:   --no-browser{RESET}")
     else:
@@ -78,7 +90,7 @@ def cli(ctx, port: int, no_browser: bool) -> None:
 
         uvicorn.run(
             "departures.server:app",
-            host="127.0.0.1",
+            host=host,
             port=port,
             log_level="warning",
         )

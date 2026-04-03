@@ -8,7 +8,7 @@ from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import db
@@ -43,6 +43,50 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ── Auth middleware ───────────────────────────────────────────────
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    path = request.url.path
+
+    # Always allow: join page, static assets, API docs
+    if path.startswith("/join/") or path.startswith("/assets/") or path in ("/favicon.ico",):
+        return await call_next(request)
+
+    # Owner: localhost always has full access
+    client_host = request.client.host if request.client else ""
+    if client_host in ("127.0.0.1", "::1"):
+        request.state.role = "owner"
+        return await call_next(request)
+
+    # Check viewer token (cookie or query param)
+    token = request.cookies.get("viewer_token") or request.query_params.get("token")
+    if token:
+        viewer = await db.get_viewer_by_token(token)
+        if viewer:
+            request.state.role = "viewer"
+            request.state.viewer_email = viewer["email"]
+            # Touch last_seen
+            await db.touch_viewer(viewer["id"])
+
+            # Viewers can only GET (read-only)
+            if request.method not in ("GET", "HEAD", "OPTIONS"):
+                return JSONResponse({"error": "Viewers have read-only access"}, status_code=403)
+
+            response = await call_next(request)
+            # Set cookie if it came from query param
+            if not request.cookies.get("viewer_token"):
+                response.set_cookie("viewer_token", token, httponly=True, max_age=30*86400, samesite="lax")
+            return response
+
+    # No auth from remote host → 401
+    if path.startswith("/api/"):
+        return JSONResponse({"error": "Unauthorized. Use an invite link to access."}, status_code=401)
+
+    # For non-API paths from remote without auth
+    return JSONResponse({"error": "Unauthorized. You need an invite link to view this board."}, status_code=401)
 
 
 # ── Helper ────────────────────────────────────────────────────────
@@ -167,6 +211,45 @@ async def get_settings():
 async def update_settings(request: Request):
     body = await request.json()
     return await db.update_settings(body)
+
+
+# ── Auth + Viewer endpoints ──────────────────────────────────────
+
+@app.get("/join/{token}")
+async def join_board(token: str):
+    viewer = await db.get_viewer_by_token(token)
+    if not viewer:
+        return JSONResponse({"error": "Invalid or expired invite link"}, status_code=404)
+    # Set cookie and redirect to board
+    response = RedirectResponse(url="/", status_code=302)
+    response.set_cookie("viewer_token", token, httponly=True, max_age=30*86400, samesite="lax")
+    return response
+
+
+@app.get("/api/me")
+async def get_me(request: Request):
+    role = getattr(request.state, "role", "owner")
+    email = getattr(request.state, "viewer_email", None)
+    return {"role": role, "email": email}
+
+
+@app.get("/api/viewers")
+async def list_viewers():
+    return await db.list_viewers()
+
+
+@app.post("/api/viewers")
+async def add_viewer(request: Request):
+    body = await request.json()
+    email = body.get("email", "").strip()
+    if not email or "@" not in email:
+        return JSONResponse({"error": "Valid email required"}, status_code=400)
+    return await db.add_viewer(email)
+
+
+@app.delete("/api/viewers/{vid}")
+async def remove_viewer(vid: str):
+    return await db.remove_viewer(vid)
 
 
 # ── Static file serving ──────────────────────────────────────────
