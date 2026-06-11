@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import db
+from . import __version__
 
 # ── Paths ─────────────────────────────────────────────────────────
 
@@ -34,7 +35,7 @@ async def lifespan(app: FastAPI):
 
 # ── App ───────────────────────────────────────────────────────────
 
-app = FastAPI(title="DEPARTURES", version="0.4.0", lifespan=lifespan)
+app = FastAPI(title="DEPARTURES", version=__version__, lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

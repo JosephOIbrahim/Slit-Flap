@@ -5,11 +5,12 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      '/api': 'http://localhost:8400'
+      '/api': 'http://localhost:4040'
     }
   },
   build: {
-    outDir: 'dist',
+    // Build straight into the Python package so `pip install` ships the board
+    outDir: '../departures/frontend/dist',
     emptyOutDir: true
   }
 })

@@ -14,11 +14,15 @@ if sys.stdout.encoding != "utf-8":
     )
 
 import asyncio
+import json
 import threading
 import time
+import urllib.request
 import webbrowser
 
 import click
+
+from departures import __version__
 
 # ── ANSI Colors ──────────────────────────────────────────────────
 AMBER = "\033[38;2;212;160;18m"
@@ -35,7 +39,7 @@ BANNER = f"""{AMBER}
 ║   └─┘└─┘└─┘└─┘└─┘└─┘└─┘└─┘└─┘└─┘└─┘                  ║
 ║                                                          ║
 ║   USD-COMPOSED PROJECT STATE                             ║
-║   SOLARI PROTOCOL v0.4.0                                 ║
+║   SOLARI PROTOCOL v{__version__:<38}║
 ║                                                          ║
 ╚══════════════════════════════════════════════════════════╝{RESET}
 """
@@ -47,7 +51,17 @@ def _open_browser(port: int, delay: float = 1.5) -> None:
     webbrowser.open(f"http://localhost:{port}")
 
 
+def _board_already_running(port: int) -> bool:
+    """True if a DEPARTURES server is already answering on this port."""
+    try:
+        with urllib.request.urlopen(f"http://localhost:{port}/api/session", timeout=1) as r:
+            return "startedAt" in json.loads(r.read())
+    except Exception:
+        return False
+
+
 @click.group(invoke_without_command=True)
+@click.version_option(__version__, prog_name="departures")
 @click.option("--port", default=4040, show_default=True, help="Port to run the server on.")
 @click.option("--host", default="127.0.0.1", show_default=True, help="Host to bind to. Use 0.0.0.0 for network sharing.")
 @click.option("--no-browser", is_flag=True, default=False, help="Start server without opening the browser.")
@@ -55,6 +69,14 @@ def _open_browser(port: int, delay: float = 1.5) -> None:
 def cli(ctx, port: int, host: str, no_browser: bool) -> None:
     """DEPARTURES — a project manager that looks like a departure board."""
     if ctx.invoked_subcommand is not None:
+        return
+
+    # ── Already departed? Just open the board ────────────────────
+    if _board_already_running(port):
+        click.echo(f"  {AMBER}Board already departed on port {port}.{RESET}")
+        if not no_browser:
+            click.echo(f"  {WHITE}→ Opening in browser...{RESET}")
+            webbrowser.open(f"http://localhost:{port}")
         return
 
     # ── Print startup info ───────────────────────────────────────

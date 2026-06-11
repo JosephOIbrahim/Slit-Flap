@@ -60,19 +60,13 @@ cd Slit-Flap
 # 2. Install the Python backend
 pip install -e .
 
-# 3. Build the frontend (one time only)
+# 3. Build the frontend (one time only — it builds straight into the app)
 cd frontend
 npm install
 npm run build
 cd ..
 
-# 4. Copy the built frontend into the app
-# On Mac/Linux:
-cp -r frontend/dist departures/frontend/
-# On Windows (PowerShell):
-Copy-Item -Recurse frontend\dist departures\frontend\
-
-# 5. Launch
+# 4. Launch
 departures
 ```
 
@@ -132,6 +126,14 @@ flowchart TB
 ### The Board
 
 Every project is a **split-flap card** — physical character modules with a horizontal split line through the letterforms, just like a real Solari departure board. Names flip into place with a mechanical animation when things change.
+
+### Flip Notes
+
+Every card has a back. Tap the **↻** icon in a card's top line and the whole card does a 3D flip — revealing a sticky-note surface for that project. Type freely (Ctrl+B bold, Ctrl+I italic), it auto-saves after a second of stillness, and **↩ BOARD** flips you back. Like turning over an actual departure card to find a note taped to the back.
+
+### Departure Status
+
+Set a deadline on a project and the board speaks train: **DEPARTS 3D** in amber as the date approaches (7 days out), **DEPARTS TODAY** on the day, and **DELAYED 2D** in red when it slips past. Delayed projects also climb the NEXT UP scoring — the board nags by reordering, not by notifications.
 
 ```mermaid
 graph TD
@@ -267,6 +269,11 @@ netsh advfirewall firewall add rule name="Departures" dir=in action=allow protoc
 | `departures --no-browser` | Start without opening browser |
 | `departures seed` | Reset database to the 16 default projects |
 | `departures recap` | Print today's recap in the terminal |
+| `departures --version` | Print the installed version |
+
+Running `departures` while the board is already up doesn't crash — it just opens the browser to the running board.
+
+**Custom data location:** set the `DEPARTURES_HOME` environment variable to keep the database somewhere other than `~/.departures` (separate boards, testing, synced folders).
 
 ---
 
@@ -276,9 +283,9 @@ netsh advfirewall firewall add rule name="Departures" dir=in action=allow protoc
 graph TB
     subgraph Frontend["Frontend (React + Vite)"]
         direction TB
-        F1["App.jsx — Single-file React app"]
-        F2["Split-flap character renderer"]
-        F3["Solari design system\n6-grey palette · 4px radius · 9px min"]
+        F1["App.jsx — board state + layout"]
+        F2["components/ — SplitFlap · ProjectCard\nRows · Modals"]
+        F3["theme.js · api.js · utils.js\n6-grey palette · 4px radius · 9px min"]
     end
     
     subgraph Backend["Backend (Python)"]
@@ -407,9 +414,9 @@ If any of that sounds familiar, this might be for you.
 
 ## Roadmap
 
+- [x] Flip notes (Y-axis card flip to reveal sticky notes on the back) — *shipped in 0.5*
 - [ ] Google Calendar integration (replace mock events with real calendar)
 - [ ] Gmail integration (replace mock emails with real inbox)
-- [ ] Flip notes (Y-axis card flip to reveal sticky notes on the back)
 - [ ] USD composition layer for project state (git-trackable, composable)
 - [ ] PWA support (install to home screen, offline access)
 - [ ] Cloud deployment option (Railway / Fly.io)
@@ -422,6 +429,6 @@ MIT
 
 ---
 
-*USD-Composed Project State · Solari Protocol v0.4.0*
+*USD-Composed Project State · Solari Protocol v0.5.0*
 
 *Built with [Claude Code](https://claude.ai/claude-code)*
