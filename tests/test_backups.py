@@ -3,6 +3,7 @@
 backup back without the leftover-file corruption a hand restore risks."""
 
 import asyncio
+import os
 import shutil
 import sqlite3
 import subprocess
@@ -451,9 +452,64 @@ def test_restore_puts_a_backup_back_cleanly_even_after_a_crash(restore):
     assert ids_in(db.DB_PATH) == ids_in(backup)  # exactly what the backup held
     start_board()  # and the board runs on it
 
-    # The board from before the restore, crash changes and all, is kept
+    # The board from before the restore, crash changes and all, is kept as
+    # one self-contained file (its -wal folded in, nothing to carry along)
     [kept] = db.backup_dir().glob("*-before-restore.db")
+    assert not list(db.backup_dir().glob("*-before-restore.db-*"))  # (checked before opening it)
     assert "after-backup" in ids_in(kept)
+
+
+def test_leftovers_of_a_missing_board_are_never_replayed_onto_the_restore(restore, tmp_path):
+    start_board()
+    backup = db.backup_dir() / daily_backups()[0]
+    crash_while_writing("DELETE FROM projects WHERE id = 'brand-refresh';"
+                        "INSERT INTO projects (id, name) VALUES ('stale', 'Stale');")
+    db.DB_PATH.rename(tmp_path / "moved-away.db")  # moved by hand; its -wal stayed behind
+    wal = db.DB_PATH.with_name("departures.db-wal")
+    assert wal.exists()
+
+    result = restore(backup, "--yes")
+    assert result.exit_code == 0, result.output
+    assert not wal.exists()
+    assert ids_in(db.DB_PATH) == ids_in(backup)
+    assert "Leftover files of a missing board kept at" in result.output
+    start_board()  # the board starts on exactly the backup, nothing replayed
+    assert ids_in(db.DB_PATH) == ids_in(backup)
+
+
+def test_a_restore_that_fails_at_the_swap_leaves_the_board_as_it_was(restore, monkeypatch):
+    start_board()
+    backup = db.backup_dir() / daily_backups()[0]
+    asyncio.run(db.create_project({"id": "newer", "name": "Newer"}))
+    before = ids_in(db.DB_PATH)
+    real_replace = os.replace
+
+    def replace(src, dst, *args, **kwargs):  # the final rename onto the board fails
+        if Path(dst) == db.DB_PATH:
+            raise PermissionError(13, "Access is denied", str(dst))
+        return real_replace(src, dst, *args, **kwargs)
+
+    monkeypatch.setattr(os, "replace", replace)
+    result = restore(backup, "--yes")
+    assert result.exit_code != 0
+    assert "Nothing was changed" in result.output
+    assert ids_in(db.DB_PATH) == before
+    assert no_restore_leftovers()
+    start_board()  # the owner's board, not a fresh demo board
+    assert ids_in(db.DB_PATH) == before
+
+
+def test_a_damaged_board_can_be_restored_over_and_is_kept_as_it_was(restore):
+    start_board()
+    backup = db.backup_dir() / daily_backups()[0]
+    damage_the_board()
+    damaged = db.DB_PATH.read_bytes()
+
+    result = restore(backup, "--yes")
+    assert result.exit_code == 0, result.output
+    assert ids_in(db.DB_PATH) == ids_in(backup)
+    [kept] = db.backup_dir().glob("*-before-restore.db")
+    assert kept.read_bytes() == damaged  # too damaged to copy cleanly: kept byte for byte
 
 
 def test_restore_asks_first_and_no_changes_nothing(restore):

@@ -473,12 +473,12 @@ def _count_tables(conn: sqlite3.Connection) -> dict[str, int | None]:
 #
 # Two steps, so the CLI can show what's coming and ask first:
 #   stage_restore(backup)   copy the backup in beside the board and check it
-#   install_restore(staged) move the current board (and its -wal/-shm) into
-#                           backups/, then swap the checked copy in
+#   install_restore(staged) keep a copy of the current board in backups/,
+#                           then swap the checked copy in with one rename
 
 
 class RestoreError(Exception):
-    """A restore was refused. Nothing about the board was changed."""
+    """A restore didn't happen. The message says what, if anything, changed."""
 
 
 def list_backups() -> list[Path]:
@@ -534,42 +534,100 @@ def discard_restore(staged: Path) -> None:
     _remove_board_files(staged)
 
 
-def install_restore(staged: Path) -> Path | None:
+def _keep_board(kept: Path) -> list[Path]:
+    """Copy the current board into backups/ as `kept` before it's replaced:
+    a verified single file with its -wal folded in, or, for a board too
+    damaged to copy that way, its raw files (-wal and all), so nothing is
+    lost. Leftover -wal/-shm with no board beside them are kept raw too.
+    Returns the files written. Raises BackupTimeout if another program
+    holds the board locked."""
+    if DB_PATH.exists():
+        try:
+            return [_snapshot(kept)]
+        except BackupCheckFailed:
+            pass  # damaged: keep its files exactly as they are
+    written: list[Path] = []
+    try:
+        for src in (DB_PATH, *_sidecars(DB_PATH)):
+            if src.exists():
+                dst = kept.with_name(kept.name + src.name[len(DB_PATH.name):])
+                shutil.copyfile(src, dst)
+                written.append(dst)
+    except BaseException:
+        for f in written:
+            f.unlink(missing_ok=True)
+        raise
+    return written
+
+
+def _fsync(path: Path) -> None:
+    with open(path, "rb+") as f:
+        os.fsync(f.fileno())
+
+
+def _fsync_dir(folder: Path) -> None:
+    """Make a rename in folder survive a power cut. (Windows can't open a
+    folder for this; NTFS journals the rename itself.)"""
+    if os.name == "nt":
+        return
+    fd = os.open(folder, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def install_restore(staged: Path) -> list[Path]:
     """Swap a staged backup in as the board.
 
-    The current board moves into backups/ first, together with its -wal and
-    -shm (left behind, SQLite would replay them onto the restored file).
-    Returns where the previous board was kept, so the restore can be
-    undone; None if there was no board.
+    1. Keep a copy of the current board in backups/ (see _keep_board).
+    2. Clear the old board's -wal/-shm/-journal: left beside the restored
+       file, SQLite would replay them onto it.
+    3. Rename the staged file over departures.db, flushed to disk first.
+       That rename is the one step that changes the board, so a restore
+       cut short (Ctrl+C, a crash, a power cut) leaves the old board or
+       the restored one: never a mix, and never no board at all.
+    Returns the files the previous board was kept as, so the restore can
+    be undone ([] if there was no board).
     """
-    kept = None
-    moved: list[tuple[Path, Path]] = []
-
-    def put_back() -> None:
-        for src, dst in reversed(moved):
-            os.replace(dst, src)
-
-    if DB_PATH.exists():
-        kept = _stamped("before-restore")
-        try:
-            for src in (DB_PATH, *_sidecars(DB_PATH)):
-                if src.exists():
-                    dst = kept.with_name(kept.name + src.name[len(DB_PATH.name):])
-                    os.replace(src, dst)
-                    moved.append((src, dst))
-        except OSError as exc:
-            put_back()
-            discard_restore(staged)
-            raise RestoreError(
-                f"Couldn't move the current board aside ({exc.strerror or exc}). "
-                "Nothing was changed. If the board is running, stop it first."
-            ) from exc
+    kept: list[Path] = []
+    cleared = False  # one of the live board's leftover files was deleted
     try:
+        if DB_PATH.exists() or any(side.exists() for side in _sidecars(DB_PATH)):
+            kept = _keep_board(_stamped("before-restore"))
+        for side in _sidecars(DB_PATH):
+            if side.exists():
+                side.unlink()
+                cleared = True
+        _fsync(staged)
         os.replace(staged, DB_PATH)
-    except OSError as exc:
-        put_back()
+    except BaseException as exc:
+        if not staged.exists():  # interrupted just after the rename: the restore is done
+            raise
         discard_restore(staged)
-        raise RestoreError(f"Couldn't put the backup in place ({exc}). Nothing was changed.") from exc
+        if not cleared:
+            for f in kept:
+                f.unlink(missing_ok=True)
+        if not isinstance(exc, (OSError, sqlite3.Error, BackupTimeout)):
+            raise
+        if isinstance(exc, BackupTimeout):
+            why = "another program has the board locked"
+        else:
+            why = getattr(exc, "strerror", None) or str(exc)
+        if not cleared:
+            raise RestoreError(
+                f"Couldn't restore ({why}). Nothing was changed. "
+                "If the board is running, stop it first."
+            ) from exc
+        raise RestoreError(
+            f"Couldn't restore ({why}). The board wasn't replaced, but its leftover "
+            f"working files were cleared. A complete copy of it is kept at "
+            f"{kept[0] if kept else backup_dir()}."
+        ) from exc
+    try:
+        _fsync_dir(DB_PATH.parent)
+    except OSError:
+        pass  # the restore is done; only its survival through a power cut is less certain
     return kept
 
 

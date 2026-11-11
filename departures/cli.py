@@ -228,7 +228,11 @@ def restore(backup: str | None, yes: bool, port: int) -> None:
 
     click.echo(f"{WHITE}Restored:{RESET} {_describe(db.board_counts())}")
     if kept:
-        click.echo(f"{WHITE}Previous board kept at:{RESET} {kept}")
+        whole = kept[0].name.endswith(".db")
+        label = "Previous board kept at:" if whole else "Leftover files of a missing board kept at:"
+        click.echo(f"{WHITE}{label}{RESET} {kept[0]}")
+        for extra in kept[1:]:
+            click.echo(f"  {DIM}with {extra.name}{RESET}")
     click.echo(f"{DIM}Start the board with: departures{RESET}")
 
 
