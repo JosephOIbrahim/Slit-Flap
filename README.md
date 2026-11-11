@@ -452,6 +452,6 @@ MIT
 
 ---
 
-*USD-Composed Project State · Solari Protocol v0.5.0*
+*USD-Composed Project State · Solari Protocol v0.5.1*
 
 *Built with [Claude Code](https://claude.ai/claude-code)*
