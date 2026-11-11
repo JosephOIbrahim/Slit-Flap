@@ -215,14 +215,6 @@ async def session():
     }
 
 
-# ── Seed endpoint (for dev convenience) ──────────────────────────
-
-@app.post("/api/seed")
-async def seed():
-    await db.seed_db()
-    return {"seeded": True}
-
-
 # ── Event endpoints ──────────────────────────────────────────────
 
 @app.get("/api/events")

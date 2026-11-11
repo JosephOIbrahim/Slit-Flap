@@ -1,5 +1,6 @@
 """DEPARTURES — SQLite data layer (aiosqlite)."""
 
+import asyncio
 import os
 import secrets
 import sqlite3
@@ -290,6 +291,34 @@ def backup_daily(today: date) -> Path | None:
     return dest
 
 
+def backup_before_seed() -> Path | None:
+    """Snapshot the board before a reset wipes it. These are never pruned:
+    each one may be the only copy of a board someone reset by mistake."""
+    if not DB_PATH.exists():
+        return None
+    stamp = datetime.now().strftime("%Y-%m-%d-%H%M%S")
+    dest = backup_dir() / f"departures-{stamp}-before-seed.db"
+    n = 2
+    while dest.exists():
+        dest = backup_dir() / f"departures-{stamp}-before-seed-{n}.db"
+        n += 1
+    return _snapshot(dest)
+
+
+def board_counts() -> dict[str, int]:
+    """What a reset would erase, by table (empty if there's no board yet)."""
+    if not DB_PATH.exists():
+        return {}
+    counts = {}
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        for table in ("projects", "notes", "logs", "events", "viewers"):
+            try:
+                counts[table] = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            except sqlite3.OperationalError:  # table not created yet
+                counts[table] = 0
+    return counts
+
+
 # ── Init + seed ───────────────────────────────────────────────────
 
 async def init_db() -> None:
@@ -325,8 +354,10 @@ async def init_db() -> None:
             await db.commit()
 
 
-async def seed_db() -> None:
-    """Drop all data and re-insert seed projects."""
+async def seed_db() -> Path | None:
+    """Back up the board, then replace everything with the seed projects.
+    Returns the backup's path (None when there was no board yet)."""
+    backup = await asyncio.to_thread(backup_before_seed)
     async with _db() as db:
         await db.executescript(_SCHEMA)
         await db.executescript("""
@@ -339,6 +370,7 @@ async def seed_db() -> None:
             DELETE FROM projects;
         """)
         await _insert_seeds(db)
+    return backup
 
 
 # ── Projects ──────────────────────────────────────────────────────

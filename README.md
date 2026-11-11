@@ -269,7 +269,7 @@ netsh advfirewall firewall add rule name="Departures" dir=in action=allow protoc
 | `departures --port 9000` | Use a custom port |
 | `departures --host 0.0.0.0` | Enable network access for sharing |
 | `departures --no-browser` | Start without opening browser |
-| `departures seed` | Reset database to the 16 default projects |
+| `departures seed` | Replace the board with the 16 demo projects (asks first, saves a backup to `~/.departures/backups/`) |
 | `departures recap` | Print today's recap in the terminal |
 | `departures --version` | Print the installed version |
 

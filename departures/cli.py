@@ -125,12 +125,27 @@ def cli(ctx, port: int, host: str, no_browser: bool) -> None:
 
 
 @cli.command()
-def seed() -> None:
-    """Reset the database to seed data."""
+@click.option("--yes", "-y", is_flag=True, help="Skip the confirmation prompt.")
+def seed(yes: bool) -> None:
+    """Replace the board with the demo projects (saves a backup first)."""
     from departures import db
 
+    counts = db.board_counts()
+    if counts and not yes:
+        labels = {"projects": "projects", "notes": "notes", "logs": "log entries",
+                  "events": "events", "viewers": "viewer links"}
+        erased = " · ".join(f"{labels[t]}: {n}" for t, n in counts.items())
+        click.echo(f"{AMBER}This erases everything on the board at{RESET}")
+        click.echo(f"  {WHITE}{db.DB_PATH}{RESET}")
+        click.echo(f"  {DIM}{erased}{RESET}")
+        click.echo(f"{AMBER}and replaces it with the {len(db.SEEDS)} demo projects. "
+                   f"A backup is saved first.{RESET}")
+        click.confirm("Continue?", abort=True)
+
     click.echo(f"{AMBER}Seeding database...{RESET}")
-    asyncio.run(db.seed_db())
+    backup = asyncio.run(db.seed_db())
+    if backup:
+        click.echo(f"{WHITE}Backup saved:{RESET} {backup}")
     click.echo(f"{WHITE}Done. Database reset to seed data.{RESET}")
 
 
