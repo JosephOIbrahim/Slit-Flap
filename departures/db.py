@@ -6,6 +6,7 @@ import secrets
 import shutil
 import sqlite3
 import tempfile
+import time
 import uuid
 from contextlib import asynccontextmanager, closing
 from datetime import date, datetime, timezone
@@ -248,6 +249,12 @@ async def _insert_seeds(db) -> None:
 # stop the board and run `departures restore <backup>` (see Restore below).
 
 BACKUP_DAYS = 14  # daily snapshots kept
+BACKUP_TIME_LIMIT = 10.0  # seconds a backup waits for a locked board before giving up
+
+
+class BackupTimeout(RuntimeError):
+    """Another program kept the board locked, so the backup was skipped."""
+
 
 # Files SQLite keeps next to a database while it works. They belong to that
 # exact database file: left beside a different one, SQLite replays them onto
@@ -281,13 +288,28 @@ def _stamped(kind: str) -> Path:
 
 
 def _snapshot(dest: Path) -> Path:
-    """Copy the live database to dest: verified, self-contained, atomic."""
+    """Copy the live database to dest: verified, self-contained, atomic.
+
+    If another program keeps the board locked, SQLite's backup would wait
+    forever (holding up startup, or the first request of the day). It gives
+    up after BACKUP_TIME_LIMIT seconds instead and raises BackupTimeout.
+    """
     dest.parent.mkdir(parents=True, exist_ok=True)
     partial = dest.with_name(dest.name + ".partial")
     partial.unlink(missing_ok=True)
+    limit = BACKUP_TIME_LIMIT
+    deadline = time.monotonic() + limit
+
+    def give_up_if_still_locked(status, remaining, total):
+        # Called after every backup step, including ones that found the
+        # board locked; raising here aborts the backup.
+        if status in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED) and time.monotonic() >= deadline:
+            raise BackupTimeout(f"the board stayed locked for {limit:g}s, so the backup was skipped")
+
     try:
-        with closing(sqlite3.connect(DB_PATH)) as src, closing(sqlite3.connect(partial)) as out:
-            src.backup(out)
+        with closing(sqlite3.connect(DB_PATH, timeout=min(1.0, limit))) as src, \
+                closing(sqlite3.connect(partial)) as out:
+            src.backup(out, progress=give_up_if_still_locked)
             out.execute("PRAGMA journal_mode=DELETE")  # one file, no -wal sidecar
             verdict = out.execute("PRAGMA quick_check").fetchone()[0]
         if verdict != "ok":

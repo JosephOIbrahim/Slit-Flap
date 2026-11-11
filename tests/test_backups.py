@@ -7,6 +7,8 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import threading
+import time
 from contextlib import closing
 from datetime import date, timedelta
 from pathlib import Path
@@ -99,6 +101,120 @@ def test_a_failed_backup_never_stops_the_board(board, monkeypatch, caplog):
     monkeypatch.setattr(server, "_backup_day", None)
     start_board()  # second start: backup fails, board still answers
     assert "daily backup failed" in caplog.text
+
+
+# ── A locked board can't hold anything up ───────────────────────
+# Python's SQLite backup waits forever while another program holds the
+# board locked. Backups give up after db.BACKUP_TIME_LIMIT (shortened here).
+
+def lock_the_board():
+    """Another program holding the board in an exclusive lock (say, a
+    database tool in the middle of a write): no one else can even read it."""
+    holder = sqlite3.connect(db.DB_PATH)
+    holder.execute("PRAGMA locking_mode=EXCLUSIVE")
+    holder.execute("BEGIN EXCLUSIVE")
+    return holder
+
+
+def finishes_within(seconds, work):
+    """Run work() on a helper thread; report whether it finished in time.
+
+    A test that would otherwise hang (if the time limit ever broke) fails
+    instead: the caller releases the lock right after, so nothing stays stuck.
+    """
+    outcome = {}
+
+    def run():
+        try:
+            outcome["result"] = work()
+        except BaseException as exc:
+            outcome["error"] = exc
+
+    helper = threading.Thread(target=run, daemon=True)
+    helper.start()
+    helper.join(seconds)
+    return not helper.is_alive(), outcome, helper
+
+
+def test_a_locked_board_cannot_hang_a_backup(board, monkeypatch):
+    start_board()
+    monkeypatch.setattr(db, "BACKUP_TIME_LIMIT", 0.5)
+    tomorrow = date.today() + timedelta(days=1)
+
+    holder = lock_the_board()
+    try:
+        finished, outcome, helper = finishes_within(5, lambda: db.backup_daily(tomorrow))
+    finally:
+        holder.close()
+    helper.join(30)
+
+    assert finished, "the backup was still waiting on the locked board after 5s"
+    assert isinstance(outcome.get("error"), db.BackupTimeout)
+    assert f"departures-{tomorrow.isoformat()}.db" not in daily_backups()
+    assert not list(db.backup_dir().glob("*.partial"))
+
+
+def test_a_locked_board_cannot_hang_the_first_request_of_the_day(owner, monkeypatch, caplog):
+    owner.get("/api/projects")  # today's backup is done
+    monkeypatch.setattr(db, "BACKUP_TIME_LIMIT", 0.5)
+    monkeypatch.setattr(server, "_today", lambda: date.today() + timedelta(days=1))
+
+    holder = lock_the_board()
+    try:
+        # /api/session doesn't read the board: only the backup could hold it up
+        finished, outcome, helper = finishes_within(5, lambda: owner.get("/api/session"))
+    finally:
+        holder.close()
+    helper.join(30)
+
+    assert finished, "the first request of the day waited on the locked board"
+    assert outcome["result"].status_code == 200
+    assert "stayed locked" in caplog.text
+
+
+def test_startup_with_a_locked_board_skips_the_backup_and_carries_on(board, monkeypatch, caplog):
+    start_board()  # a board exists
+    monkeypatch.setattr(server, "_backup_day", None)  # a restart...
+    monkeypatch.setattr(server, "_today", lambda: date.today() + timedelta(days=1))  # ...on a new day
+    monkeypatch.setattr(db, "BACKUP_TIME_LIMIT", 0.5)
+
+    locked = threading.Event()
+
+    def hold_for_two_seconds():  # e.g. a database tool finishing a write
+        holder = lock_the_board()
+        locked.set()
+        time.sleep(2)
+        holder.close()
+
+    other_program = threading.Thread(target=hold_for_two_seconds)
+    other_program.start()
+    locked.wait(5)
+    finished, outcome, helper = finishes_within(15, start_board)
+    other_program.join(10)
+    helper.join(30)
+
+    assert finished and "error" not in outcome, outcome.get("error")
+    assert "stayed locked" in caplog.text  # skipped with a warning, then the board came up
+
+
+def test_seed_on_a_locked_board_explains_and_changes_nothing(board, monkeypatch):
+    start_board()
+    before = ids_in(db.DB_PATH)
+    monkeypatch.setattr(db, "BACKUP_TIME_LIMIT", 0.5)
+
+    holder = lock_the_board()
+    try:
+        finished, outcome, helper = finishes_within(
+            5, lambda: CliRunner().invoke(cli, ["seed", "--yes"]))
+    finally:
+        holder.close()
+    helper.join(30)
+
+    assert finished, "seed was still waiting on the locked board after 5s"
+    result = outcome["result"]
+    assert result.exit_code != 0
+    assert "Nothing was changed" in result.output
+    assert ids_in(db.DB_PATH) == before
 
 
 # ── Restoring a backup ──────────────────────────────────────────

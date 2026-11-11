@@ -150,7 +150,13 @@ def seed(yes: bool) -> None:
         click.confirm("Continue?", abort=True)
 
     click.echo(f"{AMBER}Seeding database...{RESET}")
-    backup = asyncio.run(db.seed_db())
+    try:
+        backup = asyncio.run(db.seed_db())
+    except db.BackupTimeout as exc:
+        raise click.ClickException(
+            f"Couldn't back up the board first: {exc}. Nothing was changed. "
+            "Is another program holding the board open?"
+        ) from exc
     if backup:
         click.echo(f"{WHITE}Backup saved:{RESET} {backup}")
     click.echo(f"{WHITE}Done. Database reset to seed data.{RESET}")
