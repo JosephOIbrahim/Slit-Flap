@@ -126,15 +126,17 @@ def test_a_damaged_newest_copy_gets_a_fresh_one(board):
 
 
 def test_keeps_the_newest_14_days(board):
+    # Days that come after the newest copy; a day before it means the clock
+    # was set back, and those copies are never pruned (see the clock tests).
     start_board()  # today's backup
-    days_ago = [date.today() - timedelta(days=n) for n in range(40, 20, -1)]
-    for day in days_ago:  # twenty older days, oldest first, each with a change
+    days_ahead = [date.today() + timedelta(days=n) for n in range(1, 21)]
+    for day in days_ahead:  # twenty later days, oldest first, each with a change
         back_up_on(day)
     kept = daily_backups()
     assert len(kept) == db.BACKUP_DAYS
-    assert kept[-1] == f"departures-{date.today().isoformat()}.db"
-    assert f"departures-{days_ago[-1].isoformat()}.db" in kept
-    assert f"departures-{days_ago[0].isoformat()}.db" not in kept
+    assert kept[-1] == f"departures-{days_ahead[-1].isoformat()}.db"
+    assert f"departures-{days_ahead[-1].isoformat()}.db" in kept
+    assert f"departures-{days_ahead[0].isoformat()}.db" not in kept
 
 
 def back_up_on(day):
@@ -146,18 +148,73 @@ def back_up_on(day):
     return db.backup_daily(day)
 
 
+def logs_in(path):
+    with closing(sqlite3.connect(path)) as conn:
+        return {row[0] for row in conn.execute("SELECT text FROM logs")}
+
+
 def test_a_clock_set_back_never_deletes_the_backup_just_made(board):
     # Fourteen backups from before the PC's clock jumped back (a dead clock
-    # battery can reset it to an old year). Today's copy sorts oldest by name.
+    # battery can reset it to an old year). A copy named after the old date
+    # would sort oldest by name, and pruning would delete it every day.
     start_board()
     for n in range(1, db.BACKUP_DAYS):
         back_up_on(date.today() + timedelta(days=n))
     assert len(daily_backups()) == db.BACKUP_DAYS
+    before = daily_backups()
 
     made = back_up_on(date(2020, 1, 1))
     assert made is not None and made.exists()
-    assert "departures-2020-01-01.db" in daily_backups()
-    assert len(daily_backups()) == db.BACKUP_DAYS
+    assert made.name.endswith("-clock-wrong.db")  # stamped, not named after the bad date
+    assert daily_backups() == before  # and nothing made before the clock moved was pruned
+    assert "worked on 2020-01-01" in logs_in(made)
+
+
+def test_later_work_after_a_clock_reset_never_replaces_day_one(board):
+    # With the clock at 2020 every day writes the same date-named copy,
+    # so day one's work would be lost. Stamped copies keep each day.
+    start_board()
+    for n in range(1, db.BACKUP_DAYS):
+        back_up_on(date.today() + timedelta(days=n))
+    before = daily_backups()
+
+    day_one = back_up_on(date(2020, 1, 1))
+    day_two = back_up_on(date(2020, 1, 2))
+    assert day_one != day_two and day_one.exists() and day_two.exists()
+    assert "worked on 2020-01-01" in logs_in(day_one)
+    assert "worked on 2020-01-01" in logs_in(day_two)
+    assert daily_backups() == before  # the fourteen from before the reset are all kept
+
+
+def test_a_clock_back_inside_the_window_still_copies_a_changed_day(board):
+    # The clock is set back to a day that already has a copy, so the old
+    # code saw the name taken and skipped the copy even though the board had
+    # changed, while /api/session reported the backup as done.
+    start_board()
+    days = [date.today() + timedelta(days=n) for n in range(1, db.BACKUP_DAYS)]
+    for day in days:
+        back_up_on(day)
+    before = daily_backups()
+    backdated = days[5]
+
+    made = back_up_on(backdated)  # a change, then the day's backup
+    assert made is not None and made.exists()
+    assert made.name.endswith("-clock-wrong.db")
+    assert f"worked on {backdated.isoformat()}" in logs_in(made)
+    assert daily_backups() == before  # no dated copy was replaced
+    assert db.backup_daily(backdated) is None  # nothing new changed: no second copy
+
+
+def test_the_board_reports_a_clock_that_looks_wrong(owner, make_viewer, monkeypatch):
+    session = owner.get("/api/session").json()
+    assert session["clockWrong"] is False
+
+    monkeypatch.setattr(server, "_today", lambda: date(2020, 1, 1))
+    session = owner.get("/api/session").json()
+    assert session["clockWrong"] is True
+
+    viewer, _ = make_viewer()
+    assert "clockWrong" not in viewer.get("/api/session").json()
 
 
 def test_an_old_backup_that_cannot_be_deleted_is_left_for_later(board, monkeypatch, caplog):

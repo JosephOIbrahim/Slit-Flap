@@ -409,9 +409,36 @@ def _prune(pattern: str, keep: int, newest_last, made: Path) -> None:
 _DAILY = "departures-????-??-??.db"
 
 
+def _date_in_name(path: Path) -> date | None:
+    """The date a daily copy is named after, or None for another name."""
+    try:
+        return date.fromisoformat(path.name.removeprefix("departures-").removesuffix(".db"))
+    except ValueError:
+        return None
+
+
 def last_daily_backup() -> Path | None:
     """The newest daily backup (by its date), or None."""
     return max(backup_dir().glob(_DAILY), key=lambda p: p.name, default=None)
+
+
+def latest_backup() -> Path | None:
+    """The copy written most recently, whatever it's named. A clock set
+    back names today's copy with an old date, so the newest by name isn't
+    the newest board; the one written last is."""
+    if not backup_dir().is_dir():
+        return None
+    copies = [p for p in backup_dir().glob("departures-*.db") if p.is_file()]
+    return max(copies, key=lambda p: p.stat().st_mtime_ns, default=None)
+
+
+def clock_looks_wrong(today: date) -> bool:
+    """True when `today` is before the newest daily copy's date: the PC's
+    clock was set back (a dead clock battery, say), so naming a copy after
+    today's date would replace a copy made before the clock moved."""
+    newest = last_daily_backup()
+    newest_day = _date_in_name(newest) if newest else None
+    return newest_day is not None and today < newest_day
 
 
 def backup_daily(today: date) -> Path | None:
@@ -419,9 +446,20 @@ def backup_daily(today: date) -> Path | None:
     there is no board yet, today's snapshot already exists, or nothing on
     the board changed since the last one. Skipping unchanged days means the
     14 copies kept hold 14 different versions of the board, so a mistake
-    noticed weeks later can still be undone if the board sat untouched."""
+    noticed weeks later can still be undone if the board sat untouched.
+
+    With the clock set back, copies are stamped with the clock time instead
+    of dated (so no copy replaces one made before), nothing is pruned (the
+    dated copies are all that's left of the time before), and "did anything
+    change" compares against the copy written last, not the newest name."""
     if not DB_PATH.exists():
         return None
+    if clock_looks_wrong(today):
+        last = latest_backup()
+        dest = _stamped("clock-wrong")  # never matches _DAILY, so _prune never sees it
+        if _snapshot(dest, keep=lambda copy: not _same_board(copy, last)) is None:
+            return None
+        return dest
     dest = backup_dir() / f"departures-{today.isoformat()}.db"
     if dest.exists():
         return None

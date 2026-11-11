@@ -257,9 +257,13 @@ async def session(request: Request):
     # Backup health is the owner's business only (and never the raw error,
     # which names folders on this PC): the header warns when it's failing.
     if getattr(request.state, "role", None) == "owner":
-        last = db.last_daily_backup()
+        wrong_clock = db.clock_looks_wrong(_today())
+        # With the clock set back, the copy written last is the newest board,
+        # while the newest name may belong to a copy from before the reset.
+        last = db.latest_backup() if wrong_clock else db.last_daily_backup()
         info["backupFailed"] = _backups.failed
         info["backupProblem"] = _backups.problem
+        info["clockWrong"] = wrong_clock
         info["lastBackup"] = last.stem.removeprefix("departures-") if last else None
     return info
 
