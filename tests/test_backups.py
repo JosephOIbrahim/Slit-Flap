@@ -379,6 +379,57 @@ def test_a_damaged_board_is_reported_as_damaged(owner, monkeypatch, caplog):
     assert daily_backups()[-1] in warning.getMessage()  # names the copy to go back to
 
 
+def lose_an_id_from_its_index(path):
+    """Damage one key in the projects id index: the row is still in the
+    table, but a lookup by id no longer finds it. quick_check passes;
+    integrity_check reports it missing from the index; a save by id
+    changes no rows. One byte, exactly as a failing disk could."""
+    with closing(sqlite3.connect(path)) as conn:
+        page = conn.execute("PRAGMA page_size").fetchone()[0]
+        root = conn.execute(
+            "SELECT rootpage FROM sqlite_master "
+            "WHERE type = 'index' AND name = 'sqlite_autoindex_projects_1'"
+        ).fetchone()[0]
+    data = bytearray(Path(path).read_bytes())
+    start = (root - 1) * page
+    at = bytes(data[start:start + page]).find(b"brand-refresh")
+    assert at >= 0, "the id isn't on its index page; this fixture needs updating"
+    data[start + at + len(b"brand-refresh") - 1] = ord("g")  # the key no longer matches
+    Path(path).write_bytes(bytes(data))
+
+
+def test_a_board_whose_index_lost_a_row_is_not_backed_up(board):
+    # quick_check skips index contents, so this damage used to pass the
+    # backup's check while saves that look a project up by id changed nothing.
+    asyncio.run(db.init_db())
+    lose_an_id_from_its_index(db.DB_PATH)
+    with closing(sqlite3.connect(db.DB_PATH)) as conn:
+        assert conn.execute("PRAGMA quick_check").fetchone()[0] == "ok"
+        assert "missing from index" in conn.execute("PRAGMA integrity_check").fetchone()[0]
+        assert conn.execute("UPDATE projects SET name = 'X' WHERE id = 'brand-refresh'").rowcount == 0
+
+    with pytest.raises(db.BackupCheckFailed):
+        db.backup_daily(date.today())
+    assert daily_backups() == []
+    assert not list(db.backup_dir().glob("*.partial"))
+
+
+def test_restore_refuses_a_backup_whose_index_lost_a_row(restore, tmp_path):
+    start_board()
+    before = ids_in(db.DB_PATH)
+    damaged = tmp_path / "damaged-backup.db"
+    shutil.copyfile(db.backup_dir() / daily_backups()[0], damaged)
+    lose_an_id_from_its_index(damaged)
+    with closing(sqlite3.connect(damaged)) as conn:
+        assert conn.execute("PRAGMA quick_check").fetchone()[0] == "ok"
+
+    result = restore(damaged, "--yes")
+    assert result.exit_code != 0
+    assert "damaged" in result.output and "missing from index" in result.output
+    assert ids_in(db.DB_PATH) == before
+    assert no_restore_leftovers()
+
+
 # ── A locked board can't hold anything up ───────────────────────
 # Python's SQLite backup waits forever while another program holds the
 # board locked. Backups give up after db.BACKUP_TIME_LIMIT (shortened here).

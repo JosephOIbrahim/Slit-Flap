@@ -325,7 +325,10 @@ def _snapshot(dest: Path, keep=None) -> Path | None:
             try:
                 src.backup(out, progress=give_up_if_still_locked)
                 out.execute("PRAGMA journal_mode=DELETE")  # one file, no -wal sidecar
-                verdict = out.execute("PRAGMA quick_check").fetchone()[0]
+                # integrity_check, not quick_check: quick_check skips index
+                # contents, so a row the index lost would pass and saves by id
+                # would quietly change nothing.
+                verdict = out.execute("PRAGMA integrity_check").fetchone()[0]
             except sqlite3.OperationalError:  # locked, disk full, can't open: not damage
                 raise
             except sqlite3.DatabaseError as exc:  # too damaged to copy or check
@@ -627,7 +630,8 @@ def stage_restore(backup: Path) -> tuple[Path, dict[str, int | None]]:
             if travelling.is_file():
                 shutil.copyfile(travelling, staged.with_name(staged.name + suffix))
         with closing(sqlite3.connect(staged)) as conn:
-            verdict = conn.execute("PRAGMA quick_check").fetchone()[0]
+            # integrity_check: quick_check would accept an index that lost rows.
+            verdict = conn.execute("PRAGMA integrity_check").fetchone()[0]
             if verdict != "ok":
                 raise RestoreError(f"That backup is damaged ({verdict}).")
             if problem := _not_a_board(conn):
