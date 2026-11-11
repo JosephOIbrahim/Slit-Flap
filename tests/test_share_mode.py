@@ -100,3 +100,22 @@ def test_viewer_cannot_change_anything(make_viewer):
     assert viewer.post("/api/projects", json={"name": "X"}).status_code == 403
     assert viewer.put("/api/settings", json={"zip": "10001"}).status_code == 403
     assert viewer.delete(f"/api/viewers/{invite['id']}").status_code == 403
+
+
+# ── Other web pages on this machine get nothing ─────────────────
+
+@pytest.mark.parametrize("origin", ["http://localhost:5173", "http://localhost:3000", "http://localhost"])
+def test_other_local_pages_cannot_read_the_board(owner, origin):
+    # A page served from another port on this PC runs in the owner's browser,
+    # so its requests arrive from 127.0.0.1. The browser only lets it read the
+    # answer if the server says so with Access-Control-Allow-Origin.
+    read = owner.get("/api/viewers", headers={"Origin": origin})
+    assert "access-control-allow-origin" not in read.headers
+
+    preflight = owner.options("/api/projects", headers={
+        "Origin": origin,
+        "Access-Control-Request-Method": "PUT",
+        "Access-Control-Request-Headers": "content-type",
+    })
+    assert "access-control-allow-origin" not in preflight.headers
+    assert "access-control-allow-credentials" not in preflight.headers

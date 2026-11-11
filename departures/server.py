@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 
 from . import db
@@ -63,13 +62,9 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="DEPARTURES", version=__version__, lifespan=lifespan)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origin_regex=r"http://localhost(:\d+)?",
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# No CORS: the board's own page calls /api on the same origin, and the Vite
+# dev server proxies /api (frontend/vite.config.js). Allowing other origins
+# let any page served from another localhost port read and change the board.
 
 
 # ── Backup middleware (runs after auth: only admitted requests) ───
