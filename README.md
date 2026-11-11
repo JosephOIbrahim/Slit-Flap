@@ -119,7 +119,18 @@ flowchart TB
 
 **Everything runs on your machine.** No cloud. No accounts. No subscriptions. Your data lives in a single file at `~/.departures/departures.db`.
 
-**Backups happen on their own.** The first time the board starts or is used each day, a copy goes to `~/.departures/backups/departures-YYYY-MM-DD.db`. The newest 14 are kept. To restore one: stop the board (Ctrl+C), copy the backup over `~/.departures/departures.db`, and start the board again.
+**Backups happen on their own.** The first time the board starts or is used each day, a copy goes to `~/.departures/backups/departures-YYYY-MM-DD.db`. The newest 14 are kept.
+
+**Restoring a backup.** Stop the board (Ctrl+C), then:
+
+```bash
+departures restore                            # list the backups, newest first
+departures restore departures-2026-11-10.db   # put one back
+```
+
+It checks the backup is a healthy board, shows what's on the board now and what's in the backup, and asks before changing anything. Your current board is kept in the backups folder (`departures-<date>-<time>-before-restore.db`), so a restore can be undone by restoring that file.
+
+**Restoring by hand** (if you can't run the command): stop the board, copy the current `~/.departures/departures.db` somewhere safe, delete `departures.db-wal` and `departures.db-shm` from `~/.departures` if they exist, then copy the backup over `departures.db`. Don't skip the delete: those two files belong to the old board, and SQLite would replay them onto the restored one and corrupt it.
 
 ---
 
@@ -270,6 +281,8 @@ netsh advfirewall firewall add rule name="Departures" dir=in action=allow protoc
 | `departures --host 0.0.0.0` | Enable network access for sharing |
 | `departures --no-browser` | Start without opening browser |
 | `departures seed` | Replace the board with the 16 demo projects (asks first, saves a backup to `~/.departures/backups/`) |
+| `departures restore` | List the backups, newest first |
+| `departures restore <backup>` | Put a backup back (stop the board first; asks first; keeps the current board as a backup) |
 | `departures recap` | Print today's recap in the terminal |
 | `departures --version` | Print the installed version |
 

@@ -3,6 +3,7 @@
 import asyncio
 import os
 import secrets
+import shutil
 import sqlite3
 import uuid
 from contextlib import asynccontextmanager, closing
@@ -242,14 +243,40 @@ async def _insert_seeds(db) -> None:
 # ── Backups ───────────────────────────────────────────────────────
 #
 # Plain copies of the board in <data dir>/backups/, made with SQLite's
-# online backup API (safe while the server is writing). To restore one:
-# stop the board, then copy the backup over departures.db.
+# online backup API (safe while the server is writing). To restore one,
+# stop the board and run `departures restore <backup>` (see Restore below).
 
 BACKUP_DAYS = 14  # daily snapshots kept
+
+# Files SQLite keeps next to a database while it works. They belong to that
+# exact database file: left beside a different one, SQLite replays them onto
+# it and corrupts it.
+_SIDECARS = ("-wal", "-shm", "-journal")
 
 
 def backup_dir() -> Path:
     return DB_DIR / "backups"
+
+
+def _sidecars(path: Path) -> list[Path]:
+    return [path.with_name(path.name + suffix) for suffix in _SIDECARS]
+
+
+def _remove_board_files(path: Path) -> None:
+    for p in (path, *_sidecars(path)):
+        p.unlink(missing_ok=True)
+
+
+def _stamped(kind: str) -> Path:
+    """A new, unused backups/departures-<date>-<time>-<kind>.db path."""
+    backup_dir().mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y-%m-%d-%H%M%S")
+    dest = backup_dir() / f"departures-{stamp}-{kind}.db"
+    n = 2
+    while dest.exists():
+        dest = backup_dir() / f"departures-{stamp}-{kind}-{n}.db"
+        n += 1
+    return dest
 
 
 def _snapshot(dest: Path) -> Path:
@@ -296,27 +323,134 @@ def backup_before_seed() -> Path | None:
     each one may be the only copy of a board someone reset by mistake."""
     if not DB_PATH.exists():
         return None
-    stamp = datetime.now().strftime("%Y-%m-%d-%H%M%S")
-    dest = backup_dir() / f"departures-{stamp}-before-seed.db"
-    n = 2
-    while dest.exists():
-        dest = backup_dir() / f"departures-{stamp}-before-seed-{n}.db"
-        n += 1
-    return _snapshot(dest)
+    return _snapshot(_stamped("before-seed"))
 
 
-def board_counts() -> dict[str, int]:
-    """What a reset would erase, by table (empty if there's no board yet)."""
-    if not DB_PATH.exists():
+def board_counts(path: Path | None = None) -> dict[str, int | None]:
+    """What a board holds, by table; empty if the file doesn't exist.
+
+    Reads the main file only and never writes to it (not even a pending
+    -wal), so it's safe on a damaged board: None marks a table it couldn't
+    read.
+    """
+    path = Path(path or DB_PATH)
+    if not path.exists():
         return {}
-    counts = {}
-    with closing(sqlite3.connect(DB_PATH)) as conn:
+    counts: dict[str, int | None] = {}
+    uri = path.resolve().as_uri() + "?immutable=1"
+    with closing(sqlite3.connect(uri, uri=True)) as conn:
         for table in ("projects", "notes", "logs", "events", "viewers"):
             try:
                 counts[table] = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
-            except sqlite3.OperationalError:  # table not created yet
-                counts[table] = 0
+            except sqlite3.OperationalError as exc:
+                counts[table] = 0 if "no such table" in str(exc) else None
+            except sqlite3.DatabaseError:
+                counts[table] = None
     return counts
+
+
+# ── Restore ───────────────────────────────────────────────────────
+#
+# Two steps, so the CLI can show what's coming and ask first:
+#   stage_restore(backup)   copy the backup in beside the board and check it
+#   install_restore(staged) move the current board (and its -wal/-shm) into
+#                           backups/, then swap the checked copy in
+
+
+class RestoreError(Exception):
+    """A restore was refused. Nothing about the board was changed."""
+
+
+def list_backups() -> list[Path]:
+    """Every backup in the backups folder, newest first."""
+    if not backup_dir().is_dir():
+        return []
+    found = [p for p in backup_dir().glob("departures-*.db") if p.is_file()]
+    return sorted(found, key=lambda p: p.stat().st_mtime, reverse=True)
+
+
+def stage_restore(backup: Path) -> tuple[Path, dict[str, int | None]]:
+    """Copy a backup in beside the board as departures.db.restoring and
+    prove it's a healthy board. Any -wal or -journal that came with the
+    backup is folded in, leaving one clean file. The backup itself is only
+    read. Returns (staged file, what it holds)."""
+    backup = Path(backup)
+    if not backup.is_file():
+        raise RestoreError(f"There's no backup file at {backup}")
+    if DB_PATH.exists() and backup.resolve() == DB_PATH.resolve():
+        raise RestoreError("That's the live board itself, not a backup.")
+    DB_DIR.mkdir(parents=True, exist_ok=True)
+    staged = DB_PATH.with_name(DB_PATH.name + ".restoring")
+    _remove_board_files(staged)
+    try:
+        shutil.copyfile(backup, staged)
+        for suffix in ("-wal", "-journal"):
+            travelling = backup.with_name(backup.name + suffix)
+            if travelling.is_file():
+                shutil.copyfile(travelling, staged.with_name(staged.name + suffix))
+        with closing(sqlite3.connect(staged)) as conn:
+            verdict = conn.execute("PRAGMA quick_check").fetchone()[0]
+            if verdict != "ok":
+                raise RestoreError(f"That backup is damaged ({verdict}).")
+            is_board = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'projects'"
+            ).fetchone()
+            if not is_board:
+                raise RestoreError("That file isn't a DEPARTURES board.")
+            conn.execute("PRAGMA journal_mode=DELETE")  # fold any journal in
+        for side in _sidecars(staged):
+            side.unlink(missing_ok=True)
+    except sqlite3.DatabaseError as exc:
+        _remove_board_files(staged)
+        raise RestoreError(f"That file isn't a readable board ({exc}).") from exc
+    except BaseException:
+        _remove_board_files(staged)
+        raise
+    return staged, board_counts(staged)
+
+
+def discard_restore(staged: Path) -> None:
+    """Throw away a staged restore that won't be installed."""
+    _remove_board_files(staged)
+
+
+def install_restore(staged: Path) -> Path | None:
+    """Swap a staged backup in as the board.
+
+    The current board moves into backups/ first, together with its -wal and
+    -shm (left behind, SQLite would replay them onto the restored file).
+    Returns where the previous board was kept, so the restore can be
+    undone; None if there was no board.
+    """
+    kept = None
+    moved: list[tuple[Path, Path]] = []
+
+    def put_back() -> None:
+        for src, dst in reversed(moved):
+            os.replace(dst, src)
+
+    if DB_PATH.exists():
+        kept = _stamped("before-restore")
+        try:
+            for src in (DB_PATH, *_sidecars(DB_PATH)):
+                if src.exists():
+                    dst = kept.with_name(kept.name + src.name[len(DB_PATH.name):])
+                    os.replace(src, dst)
+                    moved.append((src, dst))
+        except OSError as exc:
+            put_back()
+            discard_restore(staged)
+            raise RestoreError(
+                f"Couldn't move the current board aside ({exc.strerror or exc}). "
+                "Nothing was changed. If the board is running, stop it first."
+            ) from exc
+    try:
+        os.replace(staged, DB_PATH)
+    except OSError as exc:
+        put_back()
+        discard_restore(staged)
+        raise RestoreError(f"Couldn't put the backup in place ({exc}). Nothing was changed.") from exc
+    return kept
 
 
 # ── Init + seed ───────────────────────────────────────────────────

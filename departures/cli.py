@@ -19,6 +19,7 @@ import threading
 import time
 import urllib.request
 import webbrowser
+from pathlib import Path
 
 import click
 
@@ -124,6 +125,15 @@ def cli(ctx, port: int, host: str, no_browser: bool) -> None:
         click.echo(f"\n  {DIM}Server stopped.{RESET}")
 
 
+_COUNT_LABELS = {"projects": "projects", "notes": "notes", "logs": "log entries",
+                 "events": "events", "viewers": "viewer links"}
+
+
+def _describe(counts: dict) -> str:
+    """'projects: 14 · notes: 1 · ...' with '?' for a table that can't be read."""
+    return " · ".join(f"{_COUNT_LABELS[t]}: {'?' if n is None else n}" for t, n in counts.items())
+
+
 @cli.command()
 @click.option("--yes", "-y", is_flag=True, help="Skip the confirmation prompt.")
 def seed(yes: bool) -> None:
@@ -132,12 +142,9 @@ def seed(yes: bool) -> None:
 
     counts = db.board_counts()
     if counts and not yes:
-        labels = {"projects": "projects", "notes": "notes", "logs": "log entries",
-                  "events": "events", "viewers": "viewer links"}
-        erased = " · ".join(f"{labels[t]}: {n}" for t, n in counts.items())
         click.echo(f"{AMBER}This erases everything on the board at{RESET}")
         click.echo(f"  {WHITE}{db.DB_PATH}{RESET}")
-        click.echo(f"  {DIM}{erased}{RESET}")
+        click.echo(f"  {DIM}{_describe(counts)}{RESET}")
         click.echo(f"{AMBER}and replaces it with the {len(db.SEEDS)} demo projects. "
                    f"A backup is saved first.{RESET}")
         click.confirm("Continue?", abort=True)
@@ -147,6 +154,76 @@ def seed(yes: bool) -> None:
     if backup:
         click.echo(f"{WHITE}Backup saved:{RESET} {backup}")
     click.echo(f"{WHITE}Done. Database reset to seed data.{RESET}")
+
+
+@cli.command()
+@click.argument("backup", required=False)
+@click.option("--yes", "-y", is_flag=True, help="Skip the confirmation prompt.")
+@click.option("--port", default=4040, show_default=True,
+              help="Port the board runs on (restore won't run while it's up).")
+def restore(backup: str | None, yes: bool, port: int) -> None:
+    """Put a backup back as the board. With no BACKUP, list the backups.
+
+    BACKUP is a file name from the backups folder, or a path to a file.
+    The current board is kept in the backups folder, so a restore can be
+    undone by restoring that.
+    """
+    from departures import db
+
+    if not backup:
+        found = db.list_backups()
+        if not found:
+            click.echo(f"{DIM}No backups yet in {db.backup_dir()}{RESET}")
+            return
+        click.echo(f"{WHITE}Backups in {db.backup_dir()}, newest first:{RESET}")
+        for path in found:
+            click.echo(f"  {path.name}")
+        click.echo(f"{DIM}Restore one with: departures restore <name>{RESET}")
+        return
+
+    if _board_already_running(port):
+        raise click.ClickException(
+            f"The board is running on port {port}. Stop it first (Ctrl+C in its "
+            "window; if the silent launcher started it, end its python.exe in "
+            "Task Manager), then run this again."
+        )
+
+    source = Path(backup)
+    if not source.exists() and (db.backup_dir() / backup).is_file():
+        source = db.backup_dir() / backup
+    try:
+        staged, incoming = db.stage_restore(source)
+    except db.RestoreError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    installed = False
+    try:
+        if not yes:
+            current = db.board_counts()
+            click.echo(f"{AMBER}This replaces the board at{RESET}")
+            click.echo(f"  {WHITE}{db.DB_PATH}{RESET}")
+            if current:
+                click.echo(f"  {DIM}now:    {_describe(current)}{RESET}")
+            click.echo(f"{AMBER}with the backup{RESET}")
+            click.echo(f"  {WHITE}{source}{RESET}")
+            click.echo(f"  {DIM}backup: {_describe(incoming)}{RESET}")
+            if current:
+                click.echo(f"{AMBER}The current board is kept in the backups folder, "
+                           f"so this can be undone.{RESET}")
+            click.confirm("Continue?", abort=True)
+        try:
+            kept = db.install_restore(staged)
+        except db.RestoreError as exc:
+            raise click.ClickException(str(exc)) from exc
+        installed = True
+    finally:
+        if not installed:
+            db.discard_restore(staged)
+
+    click.echo(f"{WHITE}Restored:{RESET} {_describe(db.board_counts())}")
+    if kept:
+        click.echo(f"{WHITE}Previous board kept at:{RESET} {kept}")
+    click.echo(f"{DIM}Start the board with: departures{RESET}")
 
 
 @cli.command()
