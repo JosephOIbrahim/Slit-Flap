@@ -1,15 +1,15 @@
 """DEPARTURES — FastAPI server. Serves API + built frontend."""
 
 import math
+import re
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
-from fastapi.staticfiles import StaticFiles
 
 from . import db
 from . import __version__
@@ -48,12 +48,18 @@ app.add_middleware(
 
 # ── Auth middleware ───────────────────────────────────────────────
 
+# An invite link is exactly /join/<token>; tokens are URL-safe base64.
+_JOIN_PATH = re.compile(r"/join/[A-Za-z0-9_-]+")
+
+
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
-    path = request.url.path
+    # The decoded path, exactly as the router will see it.
+    path = request.scope["path"]
 
-    # Always allow: join page, static assets, API docs
-    if path.startswith("/join/") or path.startswith("/assets/") or path in ("/favicon.ico",):
+    # Invite links must work before the visitor has a cookie. Nothing else
+    # skips the checks below — the owner is local and viewers carry a cookie.
+    if _JOIN_PATH.fullmatch(path):
         return await call_next(request)
 
     # Owner: localhost always has full access
@@ -88,6 +94,12 @@ async def auth_middleware(request: Request, call_next):
 
     # For non-API paths from remote without auth
     return JSONResponse({"error": "Unauthorized. You need an invite link to view this board."}, status_code=401)
+
+
+def require_owner(request: Request) -> None:
+    """Route guard: only the board's owner (this machine) gets through."""
+    if getattr(request.state, "role", None) != "owner":
+        raise HTTPException(status_code=403, detail="Owner only")
 
 
 # ── Helper ────────────────────────────────────────────────────────
@@ -229,17 +241,19 @@ async def join_board(token: str):
 
 @app.get("/api/me")
 async def get_me(request: Request):
-    role = getattr(request.state, "role", "owner")
+    role = getattr(request.state, "role", "viewer")
     email = getattr(request.state, "viewer_email", None)
     return {"role": role, "email": email}
 
 
-@app.get("/api/viewers")
+# Viewer links are keys to the board: only the owner may see or change them.
+
+@app.get("/api/viewers", dependencies=[Depends(require_owner)])
 async def list_viewers():
     return await db.list_viewers()
 
 
-@app.post("/api/viewers")
+@app.post("/api/viewers", dependencies=[Depends(require_owner)])
 async def add_viewer(request: Request):
     body = await request.json()
     email = body.get("email", "").strip()
@@ -248,42 +262,68 @@ async def add_viewer(request: Request):
     return await db.add_viewer(email)
 
 
-@app.delete("/api/viewers/{vid}")
+@app.delete("/api/viewers/{vid}", dependencies=[Depends(require_owner)])
 async def remove_viewer(vid: str):
     return await db.remove_viewer(vid)
 
 
 # ── Static file serving ──────────────────────────────────────────
+#
+# Only plain file names inside the built frontend are ever served, e.g.
+# "index.html" or "assets/index-Db_14rvD.js". Every path segment is
+# checked as text *before* anything touches the disk: on Windows, merely
+# asking whether a path exists can reach outside the folder (a drive
+# letter, a network share, a device name).
 
-# Mount static assets from the built frontend (JS, CSS, images, fonts)
-if DIST_DIR.exists():
-    app.mount("/assets", StaticFiles(directory=str(DIST_DIR / "assets")), name="assets")
+_SAFE_SEGMENT = re.compile(r"[A-Za-z0-9_-][A-Za-z0-9._-]*")
+_WINDOWS_DEVICES = {"CON", "PRN", "AUX", "NUL"} | {
+    f"{kind}{n}" for kind in ("COM", "LPT") for n in range(10)
+}
+_NOT_BUILT = {"error": "Frontend not built. Run: cd frontend && npm run build"}
 
 
-# Serve index.html for the root
+def _is_safe_segment(segment: str) -> bool:
+    return (
+        _SAFE_SEGMENT.fullmatch(segment) is not None
+        and not segment.endswith(".")
+        and segment.split(".")[0].upper() not in _WINDOWS_DEVICES
+    )
+
+
+def _dist_file(rel_path: str) -> Path | None:
+    """The real file inside DIST_DIR that rel_path names, or None."""
+    parts = rel_path.split("/")
+    if not all(_is_safe_segment(p) for p in parts):
+        return None
+    root = DIST_DIR.resolve()
+    try:
+        found = root.joinpath(*parts).resolve(strict=True)
+    except (OSError, RuntimeError):
+        return None
+    if found.is_relative_to(root) and found.is_file():
+        return found
+    return None
+
+
+def _index() -> FileResponse | JSONResponse:
+    index = _dist_file("index.html")
+    if index is None:
+        return JSONResponse(_NOT_BUILT, status_code=404)
+    # Always revalidate: a cached page can point at assets a rebuild removed.
+    return FileResponse(index, headers={"Cache-Control": "no-cache"})
+
+
 @app.get("/")
 async def serve_root():
-    index = DIST_DIR / "index.html"
-    if index.exists():
-        return FileResponse(str(index))
-    return JSONResponse(
-        {"error": "Frontend not built. Run: cd frontend && npm run build"},
-        status_code=404,
-    )
+    return _index()
 
 
-# SPA catch-all: all non-API routes fall back to index.html
+# Built files by name; any other non-API path gets the board itself.
 @app.get("/{full_path:path}")
-async def spa_fallback(full_path: str):
-    # First check if it's a real static file in dist
-    candidate = DIST_DIR / full_path
-    if candidate.exists() and candidate.is_file():
-        return FileResponse(str(candidate))
-    # Otherwise serve index.html for SPA routing
-    index = DIST_DIR / "index.html"
-    if index.exists():
-        return FileResponse(str(index))
-    return JSONResponse(
-        {"error": "Frontend not built. Run: cd frontend && npm run build"},
-        status_code=404,
-    )
+async def serve_static(full_path: str):
+    if full_path == "api" or full_path.startswith("api/"):
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    found = _dist_file(full_path)
+    if found is None or found.name == "index.html":
+        return _index()
+    return FileResponse(found)

@@ -39,3 +39,6 @@ departures = ["frontend/dist/**/*"]
 
 [tool.setuptools.packages.find]
 include = ["departures*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
