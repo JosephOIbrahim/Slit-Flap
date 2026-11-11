@@ -20,13 +20,15 @@ def restore_section() -> str:
 def test_the_steps_say_how_to_stop_find_and_move_everything():
     steps = restore_section()
     for needed in (
-        "Task Manager",                  # stopping a board that has no window
+        "netstat -ano",                  # stopping a board that has no window, by its port
+        "taskkill /PID",
         "%USERPROFILE%\\.departures",    # "~" means nothing in File Explorer
         "File name extensions",          # hidden ".db" makes departures.db.db
         "departures.db.db",
         "move `departures.db`",          # moved, not copied: nothing stays behind
         "departures.db-wal",
         "departures.db-shm",
+        "before-restore-2",              # a second hand restore must not reuse the folder
     ):
         assert needed in steps, needed
 

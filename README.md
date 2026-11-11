@@ -121,7 +121,7 @@ flowchart TB
 
 **Backups happen on their own.** The first time the board starts or is used each day, a copy goes to `~/.departures/backups/departures-YYYY-MM-DD.db`. The newest 14 are kept. A day when nothing on the board changed gets no copy, so the 14 are always 14 different versions of your board, however long it sat untouched.
 
-**Restoring a backup.** Stop the board (Ctrl+C in its window; if it runs with no window, for example started from `departures-launch.vbs`, end Python in Task Manager), then:
+**Restoring a backup.** Stop the board (Ctrl+C in its window. If it runs with no window, for example started from `departures-launch.vbs`, find the one using port 4040: in a terminal, `netstat -ano | findstr :4040` shows its PID on the `LISTENING` line, then `taskkill /PID <pid> /F`. Leave other Python programs alone), then:
 
 ```bash
 departures restore                            # list the backups, newest first
@@ -134,7 +134,7 @@ It checks the backup is a healthy board, shows what's on the board now and what'
 
 1. Stop the board, as above.
 2. Open the data folder: `~/.departures` on Mac and Linux. On Windows, paste `%USERPROFILE%\.departures` into File Explorer's address bar, and turn on View → Show → File name extensions so you can see which file is which.
-3. Make a folder in it called `before-restore`, and move `departures.db` into that folder together with `departures.db-wal` and `departures.db-shm` if they're there. Keep the three together: the `-wal` file can hold your latest changes, so together they're a complete copy of the board you're replacing.
+3. Make a folder in it called `before-restore` (if one is already there from an earlier restore, use `before-restore-2`, so its old `-wal` can't be replayed onto the new board), and move `departures.db` into that folder together with `departures.db-wal` and `departures.db-shm` if they're there. Keep the three together: the `-wal` file can hold your latest changes, so together they're a complete copy of the board you're replacing.
 4. Copy the backup you want from the `backups` folder into the data folder and rename the copy to `departures.db`. On Windows, check it didn't become `departures.db.db`.
 5. Start the board.
 
