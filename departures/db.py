@@ -481,6 +481,32 @@ class RestoreError(Exception):
     """A restore didn't happen. The message says what, if anything, changed."""
 
 
+# The columns the board reads. A table that's missing is created when the
+# board starts; one that's there must have these (projects.sort_order is
+# also added at start, so boards from before it still restore).
+_BOARD_COLUMNS = {
+    "projects": set(PROJECTS.cols) - {"sort_order"},
+    "logs": {"id", "project_id", "text", "created_at"},
+    "notes": {"project_id", "content", "updated_at"},
+    "events": set(EVENTS.cols),
+    "settings": {"key", "value"},
+    "viewers": {"id", "email", "token", "created_at", "last_seen"},
+}
+
+
+def _not_a_board(conn: sqlite3.Connection) -> str | None:
+    """Why a database can't run as a DEPARTURES board, or None if it can."""
+    tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    if "projects" not in tables:
+        return "it has no projects table"
+    for table, needed in _BOARD_COLUMNS.items():
+        if table in tables:
+            have = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+            if missing := needed - have:
+                return f"its {table} table has no {', '.join(sorted(missing))}"
+    return None
+
+
 def list_backups() -> list[Path]:
     """Every backup in the backups folder, newest first."""
     if not backup_dir().is_dir():
@@ -512,11 +538,8 @@ def stage_restore(backup: Path) -> tuple[Path, dict[str, int | None]]:
             verdict = conn.execute("PRAGMA quick_check").fetchone()[0]
             if verdict != "ok":
                 raise RestoreError(f"That backup is damaged ({verdict}).")
-            is_board = conn.execute(
-                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'projects'"
-            ).fetchone()
-            if not is_board:
-                raise RestoreError("That file isn't a DEPARTURES board.")
+            if problem := _not_a_board(conn):
+                raise RestoreError(f"That file isn't a DEPARTURES board ({problem}).")
             conn.execute("PRAGMA journal_mode=DELETE")  # fold any journal in
         for side in _sidecars(staged):
             side.unlink(missing_ok=True)

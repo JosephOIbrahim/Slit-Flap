@@ -537,6 +537,35 @@ def test_restore_refuses_a_file_that_is_not_a_board(restore, tmp_path):
     assert no_restore_leftovers()
 
 
+def test_restore_refuses_another_apps_database(restore, tmp_path):
+    start_board()
+    before = ids_in(db.DB_PATH)
+    other_app = tmp_path / "other-app.db"
+    with closing(sqlite3.connect(other_app)) as conn:  # healthy, and it even has "projects"
+        conn.execute("CREATE TABLE projects (id INTEGER PRIMARY KEY, title TEXT)")
+        conn.execute("INSERT INTO projects (title) VALUES ('Not Ours')")
+        conn.commit()
+
+    result = restore(other_app, "--yes")
+    assert result.exit_code != 0
+    assert "isn't a DEPARTURES board" in result.output and "projects" in result.output
+    assert ids_in(db.DB_PATH) == before
+    assert no_restore_leftovers()
+
+
+def test_restore_takes_a_board_from_before_sort_order(restore, tmp_path):
+    start_board()
+    older = tmp_path / "from-an-older-version.db"
+    shutil.copyfile(db.backup_dir() / daily_backups()[0], older)
+    with closing(sqlite3.connect(older)) as conn:
+        conn.execute("ALTER TABLE projects DROP COLUMN sort_order")
+        conn.commit()
+
+    result = restore(older, "--yes")
+    assert result.exit_code == 0, result.output
+    start_board()  # the board adds the column back and runs on it
+
+
 def test_restore_refuses_while_the_board_is_running(restore, monkeypatch):
     start_board()
     backup = db.backup_dir() / daily_backups()[0]
