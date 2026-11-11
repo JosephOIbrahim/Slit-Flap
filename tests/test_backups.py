@@ -1,5 +1,5 @@
-"""Daily backups: one verified copy per day, the newest 14 kept, and a
-failed backup never stops the board. Restoring: `departures restore` puts a
+"""Daily backups: one verified copy per day the board changed, the newest
+14 kept, and a failed backup never stops the board. Restoring: `departures restore` puts a
 backup back without the leftover-file corruption a hand restore risks."""
 
 import asyncio
@@ -67,17 +67,33 @@ def test_only_one_backup_per_day(board, monkeypatch):
 
 def test_board_left_running_still_backs_up_each_day(owner, monkeypatch):
     owner.get("/api/projects")
+    owner.post("/api/projects", json={"name": "Worked On Today"})
     tomorrow = date.today() + timedelta(days=1)
     monkeypatch.setattr(server, "_today", lambda: tomorrow)
     owner.get("/api/projects")
     assert f"departures-{tomorrow.isoformat()}.db" in daily_backups()
 
 
+def test_a_day_with_no_changes_gets_no_new_copy(board):
+    start_board()  # today's copy
+    later = [date.today() + timedelta(days=n) for n in (1, 2, 3)]
+
+    assert db.backup_daily(later[0]) is None  # nothing changed since today's copy
+
+    with closing(sqlite3.connect(db.DB_PATH)) as conn:  # same rows, new page layout
+        conn.execute("VACUUM")
+    assert db.backup_daily(later[1]) is None
+
+    assert back_up_on(later[2]) is not None  # a real change gets its copy
+    assert daily_backups() == [f"departures-{day.isoformat()}.db" for day in (date.today(), later[2])]
+    assert not list(db.backup_dir().glob("*.partial"))
+
+
 def test_keeps_the_newest_14_days(board):
     start_board()  # today's backup
     days_ago = [date.today() - timedelta(days=n) for n in range(40, 20, -1)]
-    for day in days_ago:  # twenty older days, oldest first
-        db.backup_daily(day)
+    for day in days_ago:  # twenty older days, oldest first, each with a change
+        back_up_on(day)
     kept = daily_backups()
     assert len(kept) == db.BACKUP_DAYS
     assert kept[-1] == f"departures-{date.today().isoformat()}.db"

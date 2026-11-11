@@ -100,7 +100,7 @@ def cli(ctx, port: int, host: str, no_browser: bool) -> None:
         click.echo(f"  {WHITE}→ Board:{RESET}   Opening in browser...")
     from departures import db
     click.echo(f"  {DIM}→ Data:    {db.DB_PATH}{RESET}")
-    click.echo(f"  {DIM}→ Backups: {db.backup_dir()}  (daily, newest {db.BACKUP_DAYS} kept){RESET}")
+    click.echo(f"  {DIM}→ Backups: {db.backup_dir()}  (each day it changes, newest {db.BACKUP_DAYS} kept){RESET}")
     click.echo(f"  {DIM}→ Press Ctrl+C to stop{RESET}")
     click.echo()
 

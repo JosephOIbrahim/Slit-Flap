@@ -1,6 +1,7 @@
 """DEPARTURES — SQLite data layer (aiosqlite)."""
 
 import asyncio
+import hashlib
 import logging
 import os
 import secrets
@@ -290,8 +291,11 @@ def _stamped(kind: str) -> Path:
     return dest
 
 
-def _snapshot(dest: Path) -> Path:
+def _snapshot(dest: Path, keep=None) -> Path | None:
     """Copy the live database to dest: verified, self-contained, atomic.
+
+    With `keep`, the verified copy is first shown to keep(copy); if that
+    says no, it's thrown away and None is returned.
 
     If another program keeps the board locked, SQLite's backup would wait
     forever (holding up startup, or the first request of the day). It gives
@@ -317,11 +321,43 @@ def _snapshot(dest: Path) -> Path:
             verdict = out.execute("PRAGMA quick_check").fetchone()[0]
         if verdict != "ok":
             raise RuntimeError(f"backup failed its integrity check: {verdict}")
+        if keep is not None and not keep(partial):
+            partial.unlink()
+            return None
         os.replace(partial, dest)
     except BaseException:
         partial.unlink(missing_ok=True)
         raise
     return dest
+
+
+def _fingerprint(path: Path) -> str | None:
+    """A digest of everything a board file holds: its tables, indexes and
+    every row. Two files holding the same board get the same digest even
+    when SQLite laid out their pages differently. None if unreadable."""
+    digest = hashlib.sha256()
+    try:
+        with closing(sqlite3.connect(path)) as conn:
+            conn.execute("PRAGMA query_only = ON")
+            entries = sorted(conn.execute("SELECT type, name, tbl_name, sql FROM sqlite_master"),
+                             key=repr)
+            for entry in entries:
+                digest.update(repr(entry).encode() + b"\n")
+                kind, name = entry[0], entry[1]
+                if kind == "table":
+                    quoted = '"' + name.replace('"', '""') + '"'
+                    for row in sorted(repr(r) for r in conn.execute(f"SELECT * FROM {quoted}")):
+                        digest.update(row.encode() + b"\n")
+    except sqlite3.DatabaseError:
+        return None
+    return digest.hexdigest()
+
+
+def _same_board(copy: Path, other: Path | None) -> bool:
+    if other is None:
+        return False
+    mine = _fingerprint(copy)
+    return mine is not None and mine == _fingerprint(other)
 
 
 def _prune(pattern: str, keep: int, newest_last, made: Path) -> None:
@@ -340,16 +376,24 @@ def _prune(pattern: str, keep: int, newest_last, made: Path) -> None:
             log.warning("DEPARTURES couldn't delete old backup %s: %s", old.name, exc)
 
 
+_DAILY = "departures-????-??-??.db"
+
+
 def backup_daily(today: date) -> Path | None:
     """Snapshot the board once per day. Returns the new file, or None if
-    there is no board yet or today's snapshot already exists."""
+    there is no board yet, today's snapshot already exists, or nothing on
+    the board changed since the last one. Skipping unchanged days means the
+    14 copies kept hold 14 different versions of the board, so a mistake
+    noticed weeks later can still be undone if the board sat untouched."""
     if not DB_PATH.exists():
         return None
     dest = backup_dir() / f"departures-{today.isoformat()}.db"
     if dest.exists():
         return None
-    _snapshot(dest)
-    _prune("departures-????-??-??.db", BACKUP_DAYS, newest_last=lambda p: p.name, made=dest)
+    last = max(backup_dir().glob(_DAILY), key=lambda p: p.name, default=None)
+    if _snapshot(dest, keep=lambda copy: not _same_board(copy, last)) is None:
+        return None
+    _prune(_DAILY, BACKUP_DAYS, newest_last=lambda p: p.name, made=dest)
     return dest
 
 
