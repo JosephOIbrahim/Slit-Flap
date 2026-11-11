@@ -32,9 +32,10 @@ def _new_id() -> str:
 
 
 @asynccontextmanager
-async def _db():
+async def _db(timeout: float = 5.0):
+    """A connection to the board. `timeout`: seconds to wait for a lock."""
     DB_DIR.mkdir(parents=True, exist_ok=True)
-    db = await aiosqlite.connect(str(DB_PATH))
+    db = await aiosqlite.connect(str(DB_PATH), timeout=timeout)
     try:
         await db.execute("PRAGMA journal_mode=WAL")
         await db.execute("PRAGMA foreign_keys=ON")
@@ -607,22 +608,35 @@ async def init_db() -> None:
             await db.commit()
 
 
+_WIPED_BY_SEED = ("logs", "notes", "sessions", "events", "settings", "viewers", "projects")
+
+
 async def seed_db() -> Path | None:
     """Back up the board, then replace everything with the seed projects.
-    Returns the backup's path (None when there was no board yet)."""
-    backup = await asyncio.to_thread(backup_before_seed)
-    async with _db() as db:
-        await db.executescript(_SCHEMA)
-        await db.executescript("""
-            DELETE FROM logs;
-            DELETE FROM notes;
-            DELETE FROM sessions;
-            DELETE FROM events;
-            DELETE FROM settings;
-            DELETE FROM viewers;
-            DELETE FROM projects;
-        """)
-        await _insert_seeds(db)
+    Returns the backup's path (None when there was no board yet).
+
+    One transaction holds the board's write lock from before the backup
+    until the reset is committed, so a save from the running board can't
+    land in between (it would be in neither), and a reset that fails
+    partway changes nothing. Waits at most BACKUP_TIME_LIMIT for the lock.
+    """
+    existed = DB_PATH.exists()
+    backup = None
+    locked_out = True  # until the write lock is ours
+    try:
+        async with _db(timeout=BACKUP_TIME_LIMIT) as db:
+            await db.executescript(_SCHEMA)
+            await db.execute("BEGIN IMMEDIATE")
+            locked_out = False
+            if existed:
+                backup = await asyncio.to_thread(backup_before_seed)
+            for table in _WIPED_BY_SEED:
+                await db.execute(f"DELETE FROM {table}")
+            await _insert_seeds(db)  # commits: the whole reset lands at once
+    except sqlite3.OperationalError as exc:
+        if locked_out and "locked" in str(exc):
+            raise BackupTimeout(f"the board stayed locked for {BACKUP_TIME_LIMIT:g}s") from exc
+        raise
     return backup
 
 
