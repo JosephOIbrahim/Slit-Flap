@@ -63,6 +63,32 @@ def test_head_requests_work(owner):
     assert owner.head("/").status_code == 200
 
 
+def test_browsers_reuse_files_they_already_have(board, owner):
+    # Built assets carry a content hash in their name, so a browser may keep
+    # them for good. The page is checked each time; unchanged costs a 304.
+    script = owner.get("/assets/board.js")
+    assert script.headers["cache-control"] == "public, max-age=31536000, immutable"
+    assert owner.get("/assets/board.js", headers={"If-None-Match": script.headers["etag"]}).status_code == 304
+
+    page = owner.get("/")
+    for check in ({"If-None-Match": page.headers["etag"]},
+                  {"If-None-Match": f'"other", W/{page.headers["etag"]}'},
+                  {"If-Modified-Since": page.headers["last-modified"]}):
+        unchanged = owner.get("/", headers=check)
+        assert unchanged.status_code == 304, check
+        assert unchanged.content == b""
+        assert unchanged.headers["etag"] == page.headers["etag"]
+        assert unchanged.headers["cache-control"] == "no-cache"
+    assert owner.get("/", headers={"If-Modified-Since": "not a date"}).status_code == 200
+
+    # After a rebuild, a browser holding the old page gets the new one in full.
+    (board / "app" / "dist" / "index.html").write_text(
+        "<!doctype html><title>DEPARTURES</title><p>rebuilt</p>", encoding="utf-8")
+    rebuilt = owner.get("/", headers={"If-None-Match": page.headers["etag"]})
+    assert rebuilt.status_code == 200
+    assert "rebuilt" in rebuilt.text
+
+
 def test_request_paths_never_reach_the_filesystem(owner, monkeypatch):
     # Files are matched against a list the server makes itself. Record every
     # stat and path lookup during requests aimed outside the frontend: none

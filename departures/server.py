@@ -7,11 +7,12 @@ import os
 import re
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 
 from . import db
 from . import __version__
@@ -327,23 +328,47 @@ def _dist_files() -> dict[str, Path]:
     return found
 
 
-def _index(files: dict[str, Path] | None = None) -> FileResponse | JSONResponse:
+def _not_modified(request: Request, response: Response) -> bool:
+    """True when the browser's cached copy is still current (send a 304)."""
+    etag = response.headers.get("etag")
+    if_none_match = request.headers.get("if-none-match")
+    if if_none_match is not None:
+        tags = {t.strip() for t in if_none_match.split(",")}
+        return etag is not None and ("*" in tags or etag in tags or f"W/{etag}" in tags)
+    since, modified = request.headers.get("if-modified-since"), response.headers.get("last-modified")
+    if since and modified:
+        try:
+            return parsedate_to_datetime(since) >= parsedate_to_datetime(modified)
+        except (TypeError, ValueError):
+            return False
+    return False
+
+
+def _send_file(path: Path, request: Request, cache_control: str) -> Response:
+    response = FileResponse(path, stat_result=os.stat(path), headers={"Cache-Control": cache_control})
+    if _not_modified(request, response):
+        keep = ("etag", "last-modified", "cache-control")
+        return Response(status_code=304, headers={k: response.headers[k] for k in keep if k in response.headers})
+    return response
+
+
+def _index(request: Request, files: dict[str, Path] | None = None) -> Response:
     index = (files if files is not None else _dist_files()).get("index.html")
     if index is None:
         return JSONResponse(_NOT_BUILT, status_code=404)
     # Always revalidate: a cached page can point at assets a rebuild removed.
-    return FileResponse(index, headers={"Cache-Control": "no-cache"})
+    return _send_file(index, request, "no-cache")
 
 
 @app.api_route("/", methods=["GET", "HEAD"])
-async def serve_root():
-    return _index()
+async def serve_root(request: Request):
+    return _index(request)
 
 
 # Built files by exact name. A request that names a file that isn't there
 # gets a 404; any other path (no file name) gets the board itself.
 @app.api_route("/{full_path:path}", methods=["GET", "HEAD"])
-async def serve_static(full_path: str):
+async def serve_static(full_path: str, request: Request):
     if full_path == "api" or full_path.startswith("api/"):
         return JSONResponse(_NOT_FOUND, status_code=404)
     files = _dist_files()
@@ -351,7 +376,11 @@ async def serve_static(full_path: str):
     if found is None:
         if "." in full_path.rsplit("/", 1)[-1]:
             return JSONResponse(_NOT_FOUND, status_code=404)
-        return _index(files)
+        return _index(request, files)
     if full_path == "index.html":
-        return _index(files)
-    return FileResponse(found)
+        return _index(request, files)
+    # Vite names everything under assets/ by its content hash, so a given
+    # name never changes: browsers may keep it for a year without asking.
+    if full_path.startswith("assets/"):
+        return _send_file(found, request, "public, max-age=31536000, immutable")
+    return _send_file(found, request, "no-cache")
