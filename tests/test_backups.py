@@ -624,6 +624,33 @@ def test_leftovers_of_a_missing_board_are_never_replayed_onto_the_restore(restor
     assert ids_in(db.DB_PATH) == ids_in(backup)
 
 
+def test_raw_kept_copies_are_flushed_to_disk(board, monkeypatch):
+    # The raw path copies a damaged board's files as they are. Each copy has
+    # to be flushed before the swap: a power cut right after would otherwise
+    # leave a kept copy missing the last of what it was meant to save.
+    start_board()
+    crash_while_writing("INSERT INTO projects (id, name) VALUES ('wonly', 'WAL Only');")
+    wal = db.DB_PATH.with_name("departures.db-wal")
+    original_wal = wal.read_bytes()
+    open(db.DB_PATH, "wb").close()  # zero-byte board + its -wal: the raw path
+
+    flushed = []
+    real_fsync = db._fsync
+
+    def record(path):
+        flushed.append(Path(path))
+        real_fsync(path)
+
+    monkeypatch.setattr(db, "_fsync", record)
+    kept = db.backup_dir() / "departures-2020-01-01-before-restore.db"
+    written = db._keep_board(kept)
+
+    assert written  # the board's own files were kept, not a clean copy
+    assert set(written) <= set(flushed)  # every one of them was flushed
+    kept_wal = kept.with_name(kept.name + "-wal")
+    assert kept_wal in written and kept_wal.read_bytes() == original_wal
+
+
 def test_restore_keeps_the_wal_of_a_zero_byte_board(restore, tmp_path):
     # A crash can leave departures.db empty with the real changes still in
     # its -wal. The copy kept must include that -wal, not an empty board.
