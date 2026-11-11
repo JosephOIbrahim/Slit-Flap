@@ -853,7 +853,7 @@ def test_restore_warns_when_removed_viewer_links_would_work_again(restore):
     asyncio.run(db.remove_viewer(removed["id"]))  # the owner revokes a link
 
     asked = restore(backup, input="n\n")
-    assert "removed@example.com" in asked.output and "brings them back" in asked.output
+    assert "removed@example.com" in asked.output and "will work again" in asked.output
     assert "still-invited@example.com" not in asked.output  # that one never went away
 
     done = restore(backup, "--yes")
@@ -882,6 +882,28 @@ def test_restore_says_when_it_could_not_check_viewer_links(restore, monkeypatch)
     assert "Couldn't check viewer links; the backup has these links:" in asked.output
     assert "removed@example.com" in asked.output
     assert no_restore_leftovers()
+
+
+def test_the_restore_prompt_counts_links_from_the_copy_it_warns_about(restore):
+    # The "now:" counts read the main file while the link check read it with
+    # the crash-left -wal folded in, so the prompt could say "viewer links:
+    # 2" and in the same breath warn that one of those two wasn't on the
+    # board. Both now come from one private copy.
+    asyncio.run(db.init_db())
+    asyncio.run(db.add_viewer("a@example.com"))
+    asyncio.run(db.add_viewer("b@example.com"))
+    backup = db.backup_daily(date.today())
+    crash_while_writing("DELETE FROM viewers WHERE email = 'a@example.com';")
+    wal = db.DB_PATH.with_name("departures.db-wal")
+    assert wal.stat().st_size > 0  # the removal lives in the -wal, not the main file
+
+    asked = restore(backup, input="n\n")
+
+    now_line = next(line for line in asked.output.splitlines() if "now:" in line)
+    assert "viewer links: 1" in now_line  # the -wal's removal is counted
+    assert "Old links for a@example.com" in asked.output
+    assert "removed since this backup" in asked.output
+    assert "will work again" in asked.output
 
 
 def test_restore_refuses_while_the_board_is_running(restore, monkeypatch):

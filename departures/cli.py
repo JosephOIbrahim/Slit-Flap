@@ -193,20 +193,45 @@ def _links_on(path: Path) -> dict[str, str] | None:
         return None
 
 
-def _check_links(staged: Path) -> _LinkCheck:
+def _check_links(staged: Path, current: dict[str, str] | None,
+                 board_exists: bool) -> _LinkCheck:
     """Which viewer links the backup would bring back: links it has and the
-    board no longer does. `checked` is False when either side can't be read,
-    so the caller says so instead of warning about nothing."""
-    from departures import db
-
+    board no longer does. `current` and the counts beside it come from the
+    same private copy, so they can't disagree. `checked` is False when
+    either side can't be read, so the caller says so instead of warning
+    about nothing."""
     on_backup = _links_on(staged)
-    if not db.DB_PATH.exists():
+    if not board_exists:
         return _LinkCheck([], on_backup, True)  # nothing on the board is being replaced
-    current = db.viewer_links()
     if on_backup is None or current is None:
         return _LinkCheck([], on_backup, False)
     coming_back = sorted({email for token, email in on_backup.items() if token not in current})
     return _LinkCheck(coming_back, on_backup, True)
+
+
+def _read_board_now() -> tuple[dict[str, int | None], dict[str, str] | None]:
+    """What the current board holds and its viewer links, read once from one
+    private copy. Both see any crash-left -wal (or neither does), so the
+    counts shown before a restore can't contradict the link warning beside
+    them. ({}, {}) when there is no board; unknown counts and no links when
+    it can't be read."""
+    from departures import db
+
+    if not db.DB_PATH.exists():
+        return {}, {}
+    try:
+        with db._private_board(db.DB_PATH) as private:
+            with closing(sqlite3.connect(private)) as conn:
+                counts = db._count_tables(conn)
+                try:
+                    links = dict(conn.execute("SELECT token, email FROM viewers"))
+                except sqlite3.OperationalError as exc:
+                    if "no such table" not in str(exc):
+                        raise
+                    links = {}  # a board from before viewer links: none to lose
+                return counts, links
+    except (OSError, sqlite3.DatabaseError):
+        return {table: None for table in db._COUNTED_TABLES}, None
 
 
 def _warn_unchecked(links: _LinkCheck) -> None:
@@ -230,11 +255,14 @@ def _warn_unchecked(links: _LinkCheck) -> None:
 def _warn_links(emails: list[str], restored: bool) -> None:
     if restored:
         click.echo(f"{AMBER}Viewer links that came back with the backup:{RESET} {', '.join(emails)}")
+        click.echo(f"{AMBER}They work again: anyone holding one can view the board while it's "
+                   f"shared on your network. Remove any you don't want in the board's Share "
+                   f"panel.{RESET}")
     else:
-        click.echo(f"{AMBER}Viewer links in the backup that aren't on the board now:{RESET} {', '.join(emails)}")
-    lead = "They work again" if restored else "Restoring brings them back"
-    click.echo(f"{AMBER}{lead}: anyone holding one can view the board while it's shared on "
-               f"your network. Remove any you don't want in the board's Share panel.{RESET}")
+        click.echo(f"{AMBER}Old links for {', '.join(emails)} (removed since this backup) will "
+                   f"work again; links made since then will stop working.{RESET}")
+        click.echo(f"{AMBER}Anyone holding one can view the board while it's shared on your "
+                   f"network. Remove any you don't want in the board's Share panel.{RESET}")
 
 
 def _before_restore_files() -> set[Path]:
@@ -327,9 +355,11 @@ def restore(ctx, backup: str | None, yes: bool, port: int | None) -> None:
     interrupted = False
     kept: list[Path] = []
     try:
-        links = _check_links(staged)
+        board_exists = db.DB_PATH.exists()
+        counts_now, current_links = _read_board_now()
+        links = _check_links(staged, current_links, board_exists)
         if not yes:
-            current = db.board_counts()
+            current = counts_now
             click.echo(f"{AMBER}This replaces the board at{RESET}")
             click.echo(f"  {WHITE}{db.DB_PATH}{RESET}")
             if current:
@@ -349,7 +379,7 @@ def restore(ctx, backup: str | None, yes: bool, port: int | None) -> None:
             _refuse_if_running(port)  # it may have been started while the question waited
         elif not links.checked:
             _warn_unchecked(links)  # --yes skips the prompt, not the warning
-        board_was_missing = not db.DB_PATH.exists()
+        board_was_missing = not board_exists
         staged_id = db._file_identity(staged)
         kept_before = _before_restore_files()
         try:
