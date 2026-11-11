@@ -610,20 +610,28 @@ def list_backups() -> list[Path]:
     return sorted(found, key=lambda p: p.stat().st_mtime, reverse=True)
 
 
+def _staging_path() -> Path:
+    """A staging file no other restore uses. Two restores at once must not
+    stage over each other's file: the first to install would take the
+    second one's backup with it."""
+    return DB_PATH.with_name(f"{DB_PATH.name}.restoring-{os.getpid()}-{secrets.token_hex(4)}")
+
+
 def stage_restore(backup: Path) -> tuple[Path, dict[str, int | None]]:
-    """Copy a backup in beside the board as departures.db.restoring and
-    prove it's a healthy board. Any -wal or -journal that came with the
-    backup is folded in, leaving one clean file. The backup itself is only
-    read. Returns (staged file, what it holds)."""
+    """Copy a backup in beside the board, under a staging name of this
+    restore's own, and prove it's a healthy board. Any -wal or -journal
+    that came with the backup is folded in, leaving one clean file. The
+    backup itself is only read. Returns (staged file, what it holds)."""
     backup = Path(backup)
     if not backup.is_file():
         raise RestoreError(f"There's no backup file at {backup}")
     if DB_PATH.exists() and backup.resolve() == DB_PATH.resolve():
         raise RestoreError("That's the live board itself, not a backup.")
     DB_DIR.mkdir(parents=True, exist_ok=True)
-    staged = DB_PATH.with_name(DB_PATH.name + ".restoring")
-    _remove_board_files(staged)
+    staged = _staging_path()
     try:
+        with open(staged, "xb"):  # created exclusively: the name is this restore's
+            pass
         shutil.copyfile(backup, staged)
         for suffix in ("-wal", "-journal"):
             travelling = backup.with_name(backup.name + suffix)
@@ -701,6 +709,16 @@ def _fsync_dir(folder: Path) -> None:
         os.close(fd)
 
 
+def _file_identity(path: Path) -> tuple[int, int, int, int] | None:
+    """What makes a file that exact file, across a rename: device, inode,
+    size and modification time. None if it isn't there."""
+    try:
+        st = path.stat()
+    except OSError:
+        return None
+    return (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns)
+
+
 def install_restore(staged: Path) -> list[Path]:
     """Swap a staged backup in as the board.
 
@@ -714,6 +732,13 @@ def install_restore(staged: Path) -> list[Path]:
     Returns the files the previous board was kept as, so the restore can
     be undone ([] if there was no board).
     """
+    staged = Path(staged)
+    staged_id = _file_identity(staged)
+    if staged_id is None:  # gone between staging and here
+        raise RestoreError(
+            "The staged copy of the backup vanished, so nothing was installed. "
+            "Nothing was changed. Run the restore again."
+        )
     kept: list[Path] = []
     cleared = False  # one of the live board's leftover files was deleted
     try:
@@ -726,12 +751,20 @@ def install_restore(staged: Path) -> list[Path]:
         _fsync(staged)
         os.replace(staged, DB_PATH)
     except BaseException as exc:
-        if not staged.exists():  # interrupted just after the rename: the restore is done
-            raise
+        # Success is what departures.db now is, not whether the staged name
+        # still exists: the rename may have moved it, or a staged file may
+        # have vanished before it ever got there.
+        if _file_identity(DB_PATH) == staged_id:
+            raise  # interrupted just after the rename: the restore is done
         discard_restore(staged)
         if not cleared:
             for f in kept:
                 f.unlink(missing_ok=True)
+        if isinstance(exc, FileNotFoundError):  # the staged file went away mid-restore
+            raise RestoreError(
+                "The staged copy of the backup vanished before it could be installed. "
+                "Nothing was changed. Run the restore again."
+            ) from exc
         if not isinstance(exc, (OSError, sqlite3.Error, BackupTimeout)):
             raise
         if isinstance(exc, BackupTimeout):

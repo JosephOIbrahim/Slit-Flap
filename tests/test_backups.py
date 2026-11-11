@@ -676,6 +676,36 @@ def test_a_damaged_board_can_be_restored_over_and_is_kept_as_it_was(restore):
     assert kept.read_bytes() == damaged  # too damaged to copy cleanly: kept byte for byte
 
 
+def test_two_restores_at_once_stage_in_separate_files(board):
+    # Two restores used to stage to the same departures.db.restoring: the
+    # first installed the second's backup and the second died with a raw
+    # FileNotFoundError.
+    start_board()
+    backup = db.backup_dir() / daily_backups()[0]
+    first, _ = db.stage_restore(backup)
+    second, _ = db.stage_restore(backup)
+    assert first != second
+    assert first.exists() and second.exists()
+
+    db.install_restore(first)
+    assert ids_in(db.DB_PATH) == ids_in(backup)
+    db.install_restore(second)  # still whole: it wasn't the file the first one moved
+    assert ids_in(db.DB_PATH) == ids_in(backup)
+    assert not list(db.DB_DIR.glob("*.restoring*"))  # neither staging file is left behind
+
+
+def test_a_staged_copy_that_vanishes_is_a_clean_restore_error(board):
+    start_board()
+    backup = db.backup_dir() / daily_backups()[0]
+    staged, _ = db.stage_restore(backup)
+    staged.unlink()  # gone between staging and the swap
+
+    with pytest.raises(db.RestoreError) as gone:
+        db.install_restore(staged)
+    assert "vanished" in str(gone.value)
+    assert no_restore_leftovers()
+
+
 def test_restore_asks_first_and_no_changes_nothing(restore):
     start_board()
     backup = db.backup_dir() / daily_backups()[0]
