@@ -285,6 +285,36 @@ def _remove_board_files(path: Path) -> None:
         p.unlink(missing_ok=True)
 
 
+_PARTIAL_MAX_AGE = 60  # seconds before a half-written copy counts as abandoned
+
+
+def _sweep_partials() -> None:
+    """Remove half-written backup copies a killed process left behind. Only
+    ones older than a minute, so a backup running right now keeps its own.
+    One that can't be deleted (open in another program) is left for next
+    time instead of being reported as a problem."""
+    folder = backup_dir()
+    if not folder.is_dir():
+        return
+    cutoff = time.time() - _PARTIAL_MAX_AGE
+    for leftover in folder.glob("*.partial"):
+        try:
+            if leftover.stat().st_mtime > cutoff:
+                continue
+            leftover.unlink(missing_ok=True)
+        except OSError as exc:
+            log.warning("DEPARTURES couldn't clear an old half-written backup %s: %s",
+                        leftover.name, exc)
+
+
+def _discard_partial(partial: Path) -> None:
+    try:
+        partial.unlink(missing_ok=True)
+    except OSError as exc:  # open in another program: the sweep will get it later
+        log.warning("DEPARTURES couldn't clear a half-written backup %s: %s",
+                    partial.name, exc)
+
+
 def _stamped(kind: str) -> Path:
     """A new, unused backups/departures-<date>-<time>-<kind>.db path."""
     backup_dir().mkdir(parents=True, exist_ok=True)
@@ -363,8 +393,10 @@ def _snapshot(dest: Path, keep=None, source: Path | None = None) -> Path | None:
     """
     source = Path(source or DB_PATH)
     dest.parent.mkdir(parents=True, exist_ok=True)
-    partial = dest.with_name(dest.name + ".partial")
-    partial.unlink(missing_ok=True)
+    # A half-written copy from a killed run may hold the plain name and be
+    # open in another program; this copy's name is its own, so writing never
+    # depends on deleting that one.
+    partial = dest.with_name(f"{dest.name}.{os.getpid()}-{secrets.token_hex(3)}.partial")
     limit = BACKUP_TIME_LIMIT
     deadline = time.monotonic() + limit
 
@@ -391,11 +423,11 @@ def _snapshot(dest: Path, keep=None, source: Path | None = None) -> Path | None:
         if verdict != "ok":
             raise BackupCheckFailed(f"the copy failed its integrity check ({verdict})")
         if keep is not None and not keep(partial):
-            partial.unlink()
+            _discard_partial(partial)
             return None
         os.replace(partial, dest)
     except BaseException:
-        partial.unlink(missing_ok=True)
+        _discard_partial(partial)
         raise
     return dest
 
@@ -510,6 +542,7 @@ def backup_daily(today: date) -> Path | None:
     of dated (so no copy replaces one made before), nothing is pruned (the
     dated copies are all that's left of the time before), and "did anything
     change" compares against the copy written last, not the newest name."""
+    _sweep_partials()
     if not DB_PATH.exists():
         return None
     if clock_looks_wrong(today):
@@ -531,6 +564,7 @@ def backup_daily(today: date) -> Path | None:
 def backup_before_seed() -> Path | None:
     """Snapshot the board before a reset wipes it. These are never pruned:
     each one may be the only copy of a board someone reset by mistake."""
+    _sweep_partials()
     if not DB_PATH.exists():
         return None
     return _snapshot(_stamped("before-seed"))
@@ -680,7 +714,8 @@ def stage_restore(backup: Path) -> tuple[Path, dict[str, int | None]]:
     if DB_PATH.exists() and backup.resolve() == DB_PATH.resolve():
         raise RestoreError("That's the live board itself, not a backup.")
     DB_DIR.mkdir(parents=True, exist_ok=True)
-    _sweep_restore_tmp()  # copies a killed restore left behind
+    _sweep_restore_tmp()  # private copies a killed restore left behind
+    _sweep_partials()     # half-written backups a killed backup left behind
     staged = _staging_path()
     try:
         with open(staged, "xb"):  # created exclusively: the name is this restore's
@@ -821,6 +856,11 @@ def install_restore(staged: Path) -> list[Path]:
             raise RestoreError(
                 "The staged copy of the backup vanished before it could be installed. "
                 "Nothing was changed. Run the restore again."
+            ) from exc
+        if isinstance(exc, KeyboardInterrupt):  # Ctrl+C, not a permission problem
+            raise RestoreError(
+                "Restore interrupted (Ctrl+C) before the board was replaced. "
+                "Nothing was changed. Run it again when ready."
             ) from exc
         if not isinstance(exc, (OSError, sqlite3.Error, BackupTimeout)):
             raise

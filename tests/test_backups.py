@@ -887,6 +887,64 @@ def test_restore_onto_a_machine_with_no_board(restore, tmp_path):
     assert "Previous board kept" not in result.output
 
 
+# ── Half-written copies a killed process leaves behind ───────────
+
+def test_old_partials_are_swept_and_a_running_backups_kept(board):
+    start_board()
+    old = db.backup_dir() / "departures-1999-01-01.db.partial"
+    old.write_bytes(b"half-written")
+    stamp = time.time() - 120
+    os.utime(old, (stamp, stamp))
+    fresh = db.backup_dir() / "departures-1999-01-02.db.partial"
+    fresh.write_bytes(b"a backup running right now")
+
+    db.backup_daily(date.today() + timedelta(days=1))  # a backup start sweeps
+    assert not old.exists()
+    assert fresh.exists()
+
+
+def test_a_stray_partial_that_cannot_be_deleted_does_not_block_the_backup(
+        board, monkeypatch, caplog):
+    start_board()
+    tomorrow = date.today() + timedelta(days=1)
+    stray = db.backup_dir() / f"departures-{tomorrow.isoformat()}.db.partial"
+    stray.write_bytes(b"half-written")
+    stamp = time.time() - 120
+    os.utime(stray, (stamp, stamp))
+    asyncio.run(db.create_project({"id": "changed", "name": "Changed"}))  # something to copy
+
+    real_unlink = Path.unlink
+
+    def unlink(self, missing_ok=False):  # the stray is open in another program
+        if self.suffix == ".partial" and self.exists():
+            raise PermissionError(13, "The file is being used by another process", str(self))
+        return real_unlink(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", unlink)
+    made = db.backup_daily(tomorrow)
+
+    assert made is not None and made.exists()  # written under a name of its own
+    assert stray.exists()  # left for next time, not reported as a running board
+    assert "half-written backup" in caplog.text
+    assert not list(db.backup_dir().glob(f"departures-{tomorrow.isoformat()}.db.*-*.partial"))
+
+
+def test_an_interrupted_restore_says_so_plainly(restore, monkeypatch):
+    start_board()
+    backup = db.backup_dir() / daily_backups()[0]
+
+    def interrupted(src, dst, *args, **kwargs):  # Ctrl+C at the swap
+        raise KeyboardInterrupt()
+
+    monkeypatch.setattr(os, "replace", interrupted)
+    result = restore(backup, "--yes")
+
+    assert result.exit_code != 0
+    assert "interrupted" in result.output.lower()
+    assert "board is running" not in result.output
+    assert not list(db.DB_DIR.glob("*.restoring*"))
+
+
 # ── A killed restore leaves no board copy where the owner won't look ──
 
 def test_the_private_read_copy_lives_in_the_data_folder(board):
