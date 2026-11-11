@@ -1,20 +1,35 @@
 // ─────────────────────────────────────────────────────────────
 // Thin client for the DEPARTURES REST API.
 // One place for fetch plumbing — components speak in paths.
+//
+// A failed request throws an Error carrying `status` and the
+// server's JSON body, so callers can tell a 409 ("this page is
+// behind the board") from any other failure.
 // ─────────────────────────────────────────────────────────────
 
-const json = (r) => r.json();
-
-const send = (method) => (path, body) =>
-  fetch(`/api${path}`, {
+const request = async (method, path, body) => {
+  const res = await fetch(`/api${path}`, {
     method,
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  }).then(json);
+    ...(body === undefined
+      ? {}
+      : {
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        }),
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    const err = new Error((data && data.error) || `${method} /api${path} failed (${res.status})`);
+    err.status = res.status;
+    err.data = data;
+    throw err;
+  }
+  return data;
+};
 
 export const api = {
-  get: (path) => fetch(`/api${path}`).then(json),
-  post: send("POST"),
-  put: send("PUT"),
-  del: (path) => fetch(`/api${path}`, { method: "DELETE" }),
+  get: (path) => request("GET", path),
+  post: (path, body) => request("POST", path, body),
+  put: (path, body) => request("PUT", path, body),
+  del: (path) => request("DELETE", path),
 };

@@ -46,7 +46,83 @@ export default function Departures() {
   const [showShare, setShowShare] = useState(false);
   const [viewers, setViewers] = useState([]);
   const [newViewerEmail, setNewViewerEmail] = useState("");
+  const [reloadNotice, setReloadNotice] = useState(false);
   const prevFilter = useRef(filter);
+
+  // ─── Reload machinery ──────────────────────────────────────
+  // A restore (or a server restart) swaps the board under an open
+  // tab. /api/session's startedAt changes, so the page refetches;
+  // the server also refuses a save made from a page that is behind
+  // (409). Edits that land mid-reload are held and replayed against
+  // the refreshed board, never against the values that just left.
+  const reloading = useRef(false);
+  const reloadPromise = useRef(null);
+  const pendingEdits = useRef([]);
+  const reloadBase = useRef([]);
+  const startedAt = useRef(null);
+  const projectsRef = useRef([]);
+
+  useEffect(() => { projectsRef.current = projects; }, [projects]);
+  useEffect(() => {
+    if (!reloadNotice) return;
+    const t = window.setTimeout(() => setReloadNotice(false), 15000);
+    return () => window.clearTimeout(t);
+  }, [reloadNotice]);
+
+  const holdEdit = (replay) => {
+    if (!reloading.current) return false;
+    pendingEdits.current.push(replay);
+    return true;
+  };
+
+  const onSaveError = (err) => {
+    if (!err || err.status !== 409) return;
+    setReloadNotice(true);
+    reloadBoard();
+  };
+
+  // Fields the page changed, so a held edit can be replayed onto the
+  // refreshed row without carrying the values a restore just replaced.
+  const changedFields = (before, after) => {
+    const out = {};
+    if (!before) return out;
+    Object.keys(after).forEach((k) => {
+      if (k === "updatedAt" || k === "history") return;
+      if (JSON.stringify(after[k]) !== JSON.stringify(before[k])) out[k] = after[k];
+    });
+    return out;
+  };
+
+  const loadBoard = () => Promise.all([
+    api.get('/projects').catch(() => null),
+    api.get('/events').catch(() => null),
+    api.get('/settings').catch(() => null),
+  ]).then(([p, e, s]) => {
+    if (p) setProjects(p);
+    if (e) setEvents(e);
+    if (s) {
+      setSettings(s);
+      setZipDraft(s.zip || "");
+      if (s.zip) fetchWeather(s.zip).then(setWeather);
+    }
+    return p;
+  });
+
+  const reloadBoard = () => {
+    if (reloadPromise.current) return reloadPromise.current;
+    reloadBase.current = projectsRef.current;
+    reloading.current = true;
+    const run = loadBoard()
+      .then((fresh) => {
+        const held = pendingEdits.current;
+        pendingEdits.current = [];
+        held.forEach((replay) => { try { replay(fresh || []); } catch (_) { /* the board still wins */ } });
+      })
+      .catch(() => {})
+      .finally(() => { reloading.current = false; reloadPromise.current = null; });
+    reloadPromise.current = run;
+    return run;
+  };
 
   // ─── Fonts + global styles ─────────────────────────────────
   useEffect(() => {
@@ -90,11 +166,14 @@ export default function Departures() {
     api.get('/me').then(d => setRole(d.role)).catch(() => {});
   }, []);
 
-  // Session pulse
+  // Session pulse. A changed startedAt means the server restarted or a
+  // restore swapped the board: refetch everything the page is showing.
   useEffect(() => {
     const fetchSession = () => api.get('/session').then(d => {
       setSessionMins(d.elapsedMinutes);
       setBackup({ failed: !!d.backupFailed, problem: d.backupProblem || null, last: d.lastBackup || null });
+      if (startedAt.current && d.startedAt && d.startedAt !== startedAt.current) reloadBoard();
+      if (d.startedAt) startedAt.current = d.startedAt;
     }).catch(() => {});
     fetchSession();
     const t = setInterval(fetchSession, 60000);
@@ -107,71 +186,93 @@ export default function Departures() {
   const loadViewers = () => api.get('/viewers').then(setViewers).catch(() => {});
   const addViewer = () => {
     if (!newViewerEmail.trim() || !newViewerEmail.includes("@")) return;
-    api.post('/viewers', { email: newViewerEmail }).then(() => { loadViewers(); setNewViewerEmail(""); });
+    api.post('/viewers', { email: newViewerEmail })
+      .then(() => { loadViewers(); setNewViewerEmail(""); })
+      .catch(() => {});
   };
-  const removeViewer = (id) => { api.del(`/viewers/${id}`).then(() => loadViewers()); };
+  const removeViewer = (id) => { api.del(`/viewers/${id}`).then(() => loadViewers()).catch(() => {}); };
 
   useEffect(() => { if (prevFilter.current !== filter) { setAnimKey((k) => k + 1); prevFilter.current = filter; } }, [filter]);
   useEffect(() => { if (ready) setAnimKey((k) => k + 1); }, [ready]);
 
   // ─── Settings ──────────────────────────────────────────────
   const saveSetting = (key, value) => {
+    if (holdEdit(() => saveSetting(key, value))) return;
     setSettings(prev => ({ ...prev, [key]: value }));
-    api.put('/settings', { [key]: value });
+    api.put('/settings', { [key]: value }).catch(() => {});
   };
 
   // ─── Project CRUD ──────────────────────────────────────────
   const add = () => {
+    if (holdEdit(() => add())) return;
     api.post('/projects', { name: 'New Project', status: 'QUEUED', track: '03', domain: 'AI' })
       .then(({ id }) => {
-        api.get('/projects').then(data => { setProjects(data); setOpenId(id); });
-      });
+        api.get('/projects').then(data => { setProjects(data); setOpenId(id); }).catch(() => {});
+      })
+      .catch(onSaveError);
   };
   const update = (p) => {
+    if (holdEdit((fresh) => {
+      // Replay only what the page changed, onto the refreshed row, so a
+      // restore's values aren't overwritten by the ones it replaced.
+      const now = fresh.find(x => x.id === p.id);
+      if (!now) return;
+      const before = reloadBase.current.find(x => x.id === p.id);
+      const changed = changedFields(before, p);
+      if (!Object.keys(changed).length) return;
+      api.put(`/projects/${p.id}`, { ...changed, updatedAt: now.updatedAt }).catch(onSaveError);
+    })) return;
     setProjects(prev => prev.map(x => x.id === p.id ? { ...p, updatedAt: new Date().toISOString() } : x));
-    api.put(`/projects/${p.id}`, p);
+    api.put(`/projects/${p.id}`, p).catch(onSaveError);
   };
   const remove = (id) => {
+    if (holdEdit(() => remove(id))) return;
     setProjects(prev => prev.filter(x => x.id !== id));
     if (openId === id) setOpenId(null);
-    api.del(`/projects/${id}`);
+    api.del(`/projects/${id}`).catch(onSaveError);
   };
 
   // ─── Event CRUD ────────────────────────────────────────────
   const updateEvent = (ev) => {
+    if (holdEdit(() => updateEvent(ev))) return;
     setEvents(prev => prev.map(x => x.id === ev.id ? ev : x));
-    api.put(`/events/${ev.id}`, ev);
+    api.put(`/events/${ev.id}`, ev).catch(() => {});
   };
   const removeEvent = (id) => {
+    if (holdEdit(() => removeEvent(id))) return;
     setEvents(prev => prev.filter(x => x.id !== id));
     if (openEventId === id) setOpenEventId(null);
-    api.del(`/events/${id}`);
+    api.del(`/events/${id}`).catch(() => {});
   };
   const addEvent = () => {
+    if (holdEdit(() => addEvent())) return;
     api.post('/events', { time: "12:00", endTime: "12:30", name: "New event" })
-      .then(({ id }) => { api.get('/events').then(setEvents); setOpenEventId(id); });
+      .then(({ id }) => { api.get('/events').then(setEvents).catch(() => {}); setOpenEventId(id); })
+      .catch(() => {});
   };
 
   // ─── Priority reorder ──────────────────────────────────────
-  const moveProject = (direction) => {
+  const moveProject = (direction, list) => {
     if (!openId) return;
-    const idx = projects.findIndex(p => p.id === openId);
+    if (!list && holdEdit((fresh) => moveProject(direction, fresh))) return;
+    const items = list || projects;
+    const idx = items.findIndex(p => p.id === openId);
     if (idx === -1) return;
     const swapIdx = direction === "up" ? idx - 1 : idx + 1;
-    if (swapIdx < 0 || swapIdx >= projects.length) return;
-    const a = projects[idx];
-    const b = projects[swapIdx];
+    if (swapIdx < 0 || swapIdx >= items.length) return;
+    const a = items[idx];
+    const b = items[swapIdx];
     // Use index-based ordering if sortOrders are equal or both 0
     const orderA = (a.sortOrder !== b.sortOrder) ? a.sortOrder : idx;
     const orderB = (a.sortOrder !== b.sortOrder) ? b.sortOrder : swapIdx;
     // Optimistic: swap in local state immediately
-    const newProjects = [...projects];
+    const newProjects = [...items];
     newProjects[idx] = { ...b, sortOrder: orderA };
     newProjects[swapIdx] = { ...a, sortOrder: orderB };
     setProjects(newProjects);
     // Persist both
-    api.put(`/projects/${a.id}`, { sortOrder: orderB });
-    api.put(`/projects/${b.id}`, { sortOrder: orderA });
+    api.put(`/projects/${a.id}`, { sortOrder: orderB }).catch(onSaveError);
+    api.put(`/projects/${b.id}`, { sortOrder: orderA }).catch(onSaveError);
   };
 
   const isToday = filter === "TODAY";
@@ -267,6 +368,15 @@ export default function Departures() {
               </div>
               <div title={formatDuration(sessionMins)} style={{ width: "5px", height: "5px", borderRadius: "50%", background: sessionColor(sessionMins), transition: "background 0.3s ease", cursor: "default" }} />
             </div>
+            {reloadNotice && (
+              <div
+                role="status"
+                title="The board was changed on the server since this page loaded (for example by a restore), so this page reloaded the projects to match. Edits held during the reload were re-applied to the board as it is now."
+                style={sys("9px", G3, { letterSpacing: "0.12em", marginTop: "4px", whiteSpace: "nowrap", cursor: "default" })}
+              >
+                BOARD RELOADED · THIS PAGE WAS BEHIND
+              </div>
+            )}
             {backup.failed && (
               <div
                 role="status"
