@@ -121,16 +121,24 @@ flowchart TB
 
 **Backups happen on their own.** The first time the board starts or is used each day, a copy goes to `~/.departures/backups/departures-YYYY-MM-DD.db`. The newest 14 are kept. A day when nothing on the board changed gets no copy, so the 14 are always 14 different versions of your board, however long it sat untouched.
 
-**Restoring a backup.** Stop the board (Ctrl+C), then:
+**Restoring a backup.** Stop the board (Ctrl+C in its window; if it runs with no window, for example started from `departures-launch.vbs`, end Python in Task Manager), then:
 
 ```bash
 departures restore                            # list the backups, newest first
 departures restore departures-2026-11-10.db   # put one back
 ```
 
-It checks the backup is a healthy board, shows what's on the board now and what's in the backup, and asks before changing anything. Your current board is kept in the backups folder (`departures-<date>-<time>-before-restore.db`), so a restore can be undone by restoring that file.
+It checks the backup is a healthy board, shows what's on the board now and what's in the backup, warns you if it would bring back viewer links you've removed since, and asks before changing anything. Your current board is kept in the backups folder (`departures-<date>-<time>-before-restore.db`), so a restore can be undone by restoring that file.
 
-**Restoring by hand** (if you can't run the command): stop the board, copy the current `~/.departures/departures.db` somewhere safe, delete `departures.db-wal` and `departures.db-shm` from `~/.departures` if they exist, then copy the backup over `departures.db`. Don't skip the delete: those two files belong to the old board, and SQLite would replay them onto the restored one and corrupt it.
+**Restoring by hand** (if you can't run the command):
+
+1. Stop the board, as above.
+2. Open the data folder: `~/.departures` on Mac and Linux. On Windows, paste `%USERPROFILE%\.departures` into File Explorer's address bar, and turn on View → Show → File name extensions so you can see which file is which.
+3. Make a folder in it called `before-restore`, and move `departures.db` into that folder together with `departures.db-wal` and `departures.db-shm` if they're there. Keep the three together: the `-wal` file can hold your latest changes, so together they're a complete copy of the board you're replacing.
+4. Copy the backup you want from the `backups` folder into the data folder and rename the copy to `departures.db`. On Windows, check it didn't become `departures.db.db`.
+5. Start the board.
+
+Don't leave `departures.db-wal` or `departures.db-shm` behind in step 3: they belong to the old board, and SQLite would replay them onto the restored one and corrupt it.
 
 ---
 
