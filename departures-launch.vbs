@@ -49,19 +49,25 @@ End If
 
 
 ' True when a DEPARTURES board answers at url (the same check the CLI makes).
+' Every read happens before any comparison, and any failed read means no:
+' under On Error Resume Next, a read that fails inside an If condition runs
+' the Then branch anyway (a response in a charset MSXML can't decode did that).
 Function BoardIsUp(url)
-    Dim http
+    Dim http, status, body
     BoardIsUp = False
     On Error Resume Next
     Set http = CreateObject("MSXML2.ServerXMLHTTP.6.0")
     http.setTimeouts 1000, 1000, 1000, 1000
     http.open "GET", url, False
     http.send
-    If Err.Number = 0 Then
-        If http.status = 200 And InStr(http.responseText, "startedAt") > 0 Then BoardIsUp = True
+    status = http.status
+    body = http.responseText
+    If Err.Number <> 0 Then
+        Err.Clear
+        Exit Function
     End If
-    Err.Clear
     On Error GoTo 0
+    If status = 200 And InStr(body, "startedAt") > 0 Then BoardIsUp = True
 End Function
 
 Sub OpenBoard(url)
