@@ -92,6 +92,24 @@ def test_neighbor_requests_do_not_trigger_backups(neighbor, monkeypatch):
     assert daily_backups() == []
 
 
+def test_made_up_invite_links_do_not_trigger_backups(neighbor):
+    # /join/... passes auth before anyone is known; it must not run the backup
+    neighbor.get("/join/AAAA")
+    neighbor.post("/join/AAAA")
+    neighbor.options("/join/AAAA")
+    neighbor.head("/join/AAAA")
+    assert daily_backups() == []
+
+
+def test_an_invited_viewer_still_triggers_the_days_backup(owner, make_viewer, monkeypatch):
+    viewer, _ = make_viewer()  # the owner's invite request took today's backup
+    owner.post("/api/projects", json={"name": "Changed Since"})
+    tomorrow = date.today() + timedelta(days=1)
+    monkeypatch.setattr(server, "_today", lambda: tomorrow)
+    viewer.get("/api/projects")
+    assert f"departures-{tomorrow.isoformat()}.db" in daily_backups()
+
+
 def test_a_failed_backup_never_stops_the_board(board, monkeypatch, caplog):
     def broken(today):
         raise OSError("disk full")

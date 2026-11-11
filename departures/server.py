@@ -71,7 +71,11 @@ app = FastAPI(title="DEPARTURES", version=__version__, lifespan=lifespan)
 
 @app.middleware("http")
 async def daily_backup_middleware(request: Request, call_next):
-    await _daily_backup()
+    # Auth names every admitted caller (owner or invited viewer). Invite links
+    # pass auth before anyone is known, so a made-up /join/... from the
+    # network must not be able to choose when the day's backup is taken.
+    if getattr(request.state, "role", None):
+        await _daily_backup()
     return await call_next(request)
 
 
