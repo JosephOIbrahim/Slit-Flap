@@ -260,6 +260,11 @@ class BackupTimeout(RuntimeError):
     """Another program kept the board locked, so the backup was skipped."""
 
 
+class BackupCheckFailed(RuntimeError):
+    """The copy failed SQLite's integrity check. A backup copies the board
+    page for page, so the board itself is probably damaged."""
+
+
 # Files SQLite keeps next to a database while it works. They belong to that
 # exact database file: left beside a different one, SQLite replays them onto
 # it and corrupts it.
@@ -316,11 +321,16 @@ def _snapshot(dest: Path, keep=None) -> Path | None:
     try:
         with closing(sqlite3.connect(DB_PATH, timeout=min(1.0, limit))) as src, \
                 closing(sqlite3.connect(partial)) as out:
-            src.backup(out, progress=give_up_if_still_locked)
-            out.execute("PRAGMA journal_mode=DELETE")  # one file, no -wal sidecar
-            verdict = out.execute("PRAGMA quick_check").fetchone()[0]
+            try:
+                src.backup(out, progress=give_up_if_still_locked)
+                out.execute("PRAGMA journal_mode=DELETE")  # one file, no -wal sidecar
+                verdict = out.execute("PRAGMA quick_check").fetchone()[0]
+            except sqlite3.OperationalError:  # locked, disk full, can't open: not damage
+                raise
+            except sqlite3.DatabaseError as exc:  # too damaged to copy or check
+                verdict = str(exc)
         if verdict != "ok":
-            raise RuntimeError(f"backup failed its integrity check: {verdict}")
+            raise BackupCheckFailed(f"the copy failed its integrity check ({verdict})")
         if keep is not None and not keep(partial):
             partial.unlink()
             return None
@@ -379,6 +389,11 @@ def _prune(pattern: str, keep: int, newest_last, made: Path) -> None:
 _DAILY = "departures-????-??-??.db"
 
 
+def last_daily_backup() -> Path | None:
+    """The newest daily backup (by its date), or None."""
+    return max(backup_dir().glob(_DAILY), key=lambda p: p.name, default=None)
+
+
 def backup_daily(today: date) -> Path | None:
     """Snapshot the board once per day. Returns the new file, or None if
     there is no board yet, today's snapshot already exists, or nothing on
@@ -390,7 +405,7 @@ def backup_daily(today: date) -> Path | None:
     dest = backup_dir() / f"departures-{today.isoformat()}.db"
     if dest.exists():
         return None
-    last = max(backup_dir().glob(_DAILY), key=lambda p: p.name, default=None)
+    last = last_daily_backup()
     if _snapshot(dest, keep=lambda copy: not _same_board(copy, last)) is None:
         return None
     _prune(_DAILY, BACKUP_DAYS, newest_last=lambda p: p.name, made=dest)

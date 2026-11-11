@@ -8,6 +8,8 @@ export const WHITE = "#e8e4de";
 export const BG = "#141414";
 export const RED = "#b04040";
 export const GREEN = "#5a8a5a";
+// Warnings the owner must be able to read at small sizes (5.6:1 on BG).
+export const RISK = "#d9705f";
 
 // Grey palette — 6 stops, no ad-hoc values
 export const G1 = "#999";

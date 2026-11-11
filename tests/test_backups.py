@@ -213,6 +213,75 @@ def test_a_failed_backup_is_tried_again_half_an_hour_later(owner, monkeypatch):
     assert len(attempts) == 2
 
 
+# ── The owner can see when backups are failing ──────────────────
+# Under the silent launcher there's no terminal to read, so the board's
+# header shows it (it polls /api/session every minute).
+
+def test_the_board_shows_when_backups_are_failing(owner, monkeypatch):
+    session = owner.get("/api/session").json()  # today's backup works
+    assert session["backupFailed"] is False
+    assert session["lastBackup"] == date.today().isoformat()
+
+    owner.post("/api/projects", json={"name": "Worked On Today"})
+    tomorrow = date.today() + timedelta(days=1)
+    monkeypatch.setattr(server, "_today", lambda: tomorrow)
+    now = [1000.0]
+    monkeypatch.setattr(server, "_clock", lambda: now[0])
+    real_backup = db.backup_daily
+
+    def disk_full(day):
+        raise OSError(28, "No space left on device", str(db.backup_dir()))
+
+    monkeypatch.setattr(db, "backup_daily", disk_full)
+    session = owner.get("/api/session").json()
+    assert session["backupFailed"] is True
+    assert session["lastBackup"] == date.today().isoformat()  # still the newest good one
+    assert "No space" not in str(session)  # the reason stays in the log
+
+    monkeypatch.setattr(db, "backup_daily", real_backup)  # space freed up
+    now[0] += server.BACKUP_RETRY_SECONDS
+    session = owner.get("/api/session").json()
+    assert session["backupFailed"] is False
+    assert session["lastBackup"] == tomorrow.isoformat()
+
+
+def test_viewers_are_not_told_about_backups(make_viewer):
+    viewer, _ = make_viewer()
+    session = viewer.get("/api/session").json()
+    assert "startedAt" in session
+    assert "backupFailed" not in session and "lastBackup" not in session
+
+
+def damage_the_board():
+    """Scribble over the projects table, as a failing disk or a crash in the
+    middle of a write could."""
+    with closing(sqlite3.connect(db.DB_PATH)) as conn:
+        page_size = conn.execute("PRAGMA page_size").fetchone()[0]
+        root = conn.execute("SELECT rootpage FROM sqlite_master WHERE name = 'projects'").fetchone()[0]
+    with open(db.DB_PATH, "r+b") as board_file:
+        board_file.seek((root - 1) * page_size)
+        board_file.write(b"\xff" * 16)
+
+
+def test_a_damaged_board_is_reported_as_damaged(owner, monkeypatch, caplog):
+    owner.get("/api/session")  # today's good backup
+    damage_the_board()
+    tomorrow = date.today() + timedelta(days=1)
+    monkeypatch.setattr(server, "_today", lambda: tomorrow)
+
+    with pytest.raises(db.BackupCheckFailed):
+        db.backup_daily(tomorrow)
+
+    session = owner.get("/api/session").json()  # /api/session doesn't read the board
+    assert session["backupFailed"] is True
+    assert session["lastBackup"] == date.today().isoformat()
+    assert f"departures-{tomorrow.isoformat()}.db" not in daily_backups()
+    assert not list(db.backup_dir().glob("*.partial"))
+    [warning] = [r for r in caplog.records if "may be damaged" in r.getMessage()]
+    assert warning.levelname == "ERROR"
+    assert daily_backups()[-1] in warning.getMessage()  # names the copy to go back to
+
+
 # ── A locked board can't hold anything up ───────────────────────
 # Python's SQLite backup waits forever while another program holds the
 # board locked. Backups give up after db.BACKUP_TIME_LIMIT (shortened here).

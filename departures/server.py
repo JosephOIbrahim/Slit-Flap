@@ -39,6 +39,7 @@ class _Backups:
     day: date | None = None  # the day whose backup is done
     running: bool = False    # one is in progress; other requests don't wait for it
     retry_at: float = 0.0    # after a failure, not tried again before this (_clock time)
+    failed: bool = False     # the latest attempt failed (the board's header shows it)
 
 
 _backups = _Backups()
@@ -66,10 +67,18 @@ async def _daily_backup() -> None:
         await asyncio.to_thread(db.backup_daily, today)
     except Exception as exc:  # a failed backup must never take the board down
         state.retry_at = _clock() + BACKUP_RETRY_SECONDS
-        log.warning("DEPARTURES daily backup failed (trying again in %d minutes): %s",
-                    BACKUP_RETRY_SECONDS // 60, exc)
+        state.failed = True
+        if isinstance(exc, db.BackupCheckFailed):
+            last = db.last_daily_backup()
+            log.error("DEPARTURES daily backup failed, and the board itself may be damaged: %s. "
+                      "Newest good backup: %s. See them all with: departures restore",
+                      exc, last.name if last else "none yet")
+        else:
+            log.warning("DEPARTURES daily backup failed (trying again in %d minutes): %s",
+                        BACKUP_RETRY_SECONDS // 60, exc)
     else:
         state.day = today
+        state.failed = False
     finally:
         state.running = False
 
@@ -234,11 +243,18 @@ async def recap():
 
 
 @app.get("/api/session")
-async def session():
-    return {
+async def session(request: Request):
+    info: dict[str, Any] = {
         "startedAt": _session_started_at,
         "elapsedMinutes": _elapsed_minutes(),
     }
+    # Backup health is the owner's business only (and never the raw error,
+    # which names folders on this PC): the header warns when it's failing.
+    if getattr(request.state, "role", None) == "owner":
+        last = db.last_daily_backup()
+        info["backupFailed"] = _backups.failed
+        info["lastBackup"] = last.stem.removeprefix("departures-") if last else None
+    return info
 
 
 # ── Event endpoints ──────────────────────────────────────────────

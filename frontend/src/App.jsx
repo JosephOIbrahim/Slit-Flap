@@ -12,7 +12,7 @@ import { useState, useEffect, useRef } from "react";
 // truth for theme + API access.
 // ─────────────────────────────────────────────────────────────
 
-import { ACCENT, WHITE, BG, DISPLAY, MONO, G1, G2, G3, G4, G5, G6, sys, FONT_SIZES } from "./theme";
+import { ACCENT, WHITE, BG, RISK, DISPLAY, MONO, G1, G2, G3, G4, G5, G6, sys, FONT_SIZES } from "./theme";
 import { api } from "./api";
 import { scoreProject, sessionColor, formatDuration, timeToMinutes, fetchWeather } from "./utils";
 import { ProjectCard } from "./components/ProjectCard";
@@ -37,6 +37,7 @@ export default function Departures() {
   const [animKey, setAnimKey] = useState(0);
   const [showRecap, setShowRecap] = useState(false);
   const [sessionMins, setSessionMins] = useState(0);
+  const [backup, setBackup] = useState({ failed: false, last: null });
   const [settings, setSettings] = useState({ zip: "", fontSize: "104", alignment: "left" });
   const [weather, setWeather] = useState(null);
   const [zipEditing, setZipEditing] = useState(false);
@@ -91,7 +92,10 @@ export default function Departures() {
 
   // Session pulse
   useEffect(() => {
-    const fetchSession = () => api.get('/session').then(d => setSessionMins(d.elapsedMinutes)).catch(() => {});
+    const fetchSession = () => api.get('/session').then(d => {
+      setSessionMins(d.elapsedMinutes);
+      setBackup({ failed: !!d.backupFailed, last: d.lastBackup || null });
+    }).catch(() => {});
     fetchSession();
     const t = setInterval(fetchSession, 60000);
     return () => clearInterval(t);
@@ -263,6 +267,17 @@ export default function Departures() {
               </div>
               <div title={formatDuration(sessionMins)} style={{ width: "5px", height: "5px", borderRadius: "50%", background: sessionColor(sessionMins), transition: "background 0.3s ease", cursor: "default" }} />
             </div>
+            {backup.failed && (
+              <div
+                role="status"
+                title={"Today's backup didn't work. Your board still saves as normal, and the backup is tried again every 30 minutes. "
+                  + (backup.last ? `Newest good backup: ${backup.last}. ` : "")
+                  + "The reason is in the board's window, or in launcher.log in the .departures folder."}
+                style={sys("9px", RISK, { letterSpacing: "0.12em", marginTop: "4px", whiteSpace: "nowrap", cursor: "default" })}
+              >
+                BACKUP FAILED
+              </div>
+            )}
           </div>
 
           {/* Right: weather/zip + clock */}
