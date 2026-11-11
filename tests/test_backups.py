@@ -9,6 +9,7 @@ import subprocess
 import sys
 from contextlib import closing
 from datetime import date, timedelta
+from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
@@ -236,3 +237,51 @@ def test_restore_onto_a_machine_with_no_board(restore, tmp_path):
     assert result.exit_code == 0, result.output
     assert ids_in(db.DB_PATH) == ids_in(carried)
     assert "Previous board kept" not in result.output
+
+
+# ── Counting what's on a board (shown before seed and restore) ──
+
+def through_network_share(path):
+    r"""The same file reached through this PC's own network share:
+    C:\Users\...\departures.db  ->  \\localhost\C$\Users\...\departures.db"""
+    full = str(Path(path).resolve())
+    return Path("\\\\localhost\\" + full[0] + "$" + full[2:])
+
+
+def test_counts_work_for_a_board_on_a_network_share(restore):
+    start_board()
+    on_share = through_network_share(db.DB_PATH)
+    if sys.platform != "win32" or not on_share.exists():
+        pytest.skip("needs Windows with this PC's admin share (localhost C$) reachable")
+
+    assert db.board_counts(on_share) == db.board_counts(db.DB_PATH)
+
+    # The restore prompt for a board kept on a share shows its counts too
+    backup = db.backup_dir() / daily_backups()[0]
+    on_share_home = on_share.parent
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(db, "DB_DIR", on_share_home)
+        mp.setattr(db, "DB_PATH", on_share)
+        result = restore(through_network_share(backup), input="n\n")
+    assert "now:    projects: 16" in result.output
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+
+
+def test_counts_fall_back_without_touching_the_board(board, monkeypatch):
+    start_board()
+    crash_while_writing("INSERT INTO projects (id, name) VALUES ('wal-only', 'In The WAL Only');")
+    wal = db.DB_PATH.with_name("departures.db-wal")
+    files_before = (db.DB_PATH.read_bytes(), wal.read_bytes())
+
+    real_connect = sqlite3.connect
+
+    def rejects_file_uris(target, *args, **kwargs):
+        if kwargs.get("uri"):  # what a \\server\share data folder gets
+            raise sqlite3.OperationalError("invalid uri authority: server")
+        return real_connect(target, *args, **kwargs)
+
+    monkeypatch.setattr(sqlite3, "connect", rejects_file_uris)
+    counts = db.board_counts()
+
+    assert counts["projects"] == 16  # the main file's count; the -wal is left alone
+    assert (db.DB_PATH.read_bytes(), wal.read_bytes()) == files_before  # board untouched

@@ -5,6 +5,7 @@ import os
 import secrets
 import shutil
 import sqlite3
+import tempfile
 import uuid
 from contextlib import asynccontextmanager, closing
 from datetime import date, datetime, timezone
@@ -326,26 +327,51 @@ def backup_before_seed() -> Path | None:
     return _snapshot(_stamped("before-seed"))
 
 
+_COUNTED_TABLES = ("projects", "notes", "logs", "events", "viewers")
+
+
 def board_counts(path: Path | None = None) -> dict[str, int | None]:
     """What a board holds, by table; empty if the file doesn't exist.
 
-    Reads the main file only and never writes to it (not even a pending
-    -wal), so it's safe on a damaged board: None marks a table it couldn't
-    read.
+    Reads the main file only and never writes to the board (not even a
+    pending -wal), so it's safe on a damaged board: None marks a table it
+    couldn't read.
     """
     path = Path(path or DB_PATH)
     if not path.exists():
         return {}
+    try:
+        conn = sqlite3.connect(path.resolve().as_uri() + "?immutable=1", uri=True)
+    except sqlite3.OperationalError:
+        # SQLite can't open file: URIs for network shares (\\server\share\...).
+        # Open the file directly instead, but a private copy of it: opened in
+        # place, SQLite could fold the board's -wal into it just to count rows.
+        return _counts_from_copy(path)
+    with closing(conn):
+        return _count_tables(conn)
+
+
+def _counts_from_copy(path: Path) -> dict[str, int | None]:
+    try:
+        with tempfile.TemporaryDirectory(prefix="departures-counts-",
+                                         ignore_cleanup_errors=True) as tmp:
+            copy = Path(tmp) / "board.db"
+            shutil.copyfile(path, copy)
+            with closing(sqlite3.connect(copy)) as conn:
+                return _count_tables(conn)
+    except OSError:
+        return {table: None for table in _COUNTED_TABLES}
+
+
+def _count_tables(conn: sqlite3.Connection) -> dict[str, int | None]:
     counts: dict[str, int | None] = {}
-    uri = path.resolve().as_uri() + "?immutable=1"
-    with closing(sqlite3.connect(uri, uri=True)) as conn:
-        for table in ("projects", "notes", "logs", "events", "viewers"):
-            try:
-                counts[table] = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
-            except sqlite3.OperationalError as exc:
-                counts[table] = 0 if "no such table" in str(exc) else None
-            except sqlite3.DatabaseError:
-                counts[table] = None
+    for table in _COUNTED_TABLES:
+        try:
+            counts[table] = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        except sqlite3.OperationalError as exc:
+            counts[table] = 0 if "no such table" in str(exc) else None
+        except sqlite3.DatabaseError:
+            counts[table] = None
     return counts
 
 
