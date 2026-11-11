@@ -1,12 +1,18 @@
 ' DEPARTURES silent launcher - double-click to start the board with no console window.
-' If the board is already up, it opens it in the browser instead of starting another.
 ' Startup errors are appended to launcher.log in the data folder:
 ' %DEPARTURES_HOME% if set, otherwise %USERPROFILE%\.departures
-' A running board keeps launcher.log open, so a launch that can't open it
-' writes to a log of its own, launcher-YYYYMMDD-HHMMSS.log, in the same folder.
+'
+' A board started from here keeps launcher.log open for as long as it runs. So:
+' - launcher.log opens: start the board. If one is already running (started
+'   from a terminal), the CLI notices and opens the browser itself.
+' - launcher.log is held: ask the board whether it's up and, if so, open it in
+'   the browser. Otherwise log this launch to its own launcher-YYYYMMDD-HHMMSS.log
+'   and start the board.
+' Only that second case asks the board, because on Windows asking when nothing
+' is listening takes about 2 seconds.
 Option Explicit
 ' The browser opens localhost, as the CLI does. The check asks 127.0.0.1, where
-' the server listens: asking localhost tries ::1 first, which costs Windows ~2s.
+' the server listens: asking localhost tries ::1 first, which costs another ~2s.
 Const BOARD_URL = "http://localhost:4040"
 Const PROBE_URL = "http://127.0.0.1:4040/api/session"
 
@@ -16,11 +22,6 @@ Set sh = CreateObject("WScript.Shell")
 here = fso.GetParentFolderName(WScript.ScriptFullName)
 sh.CurrentDirectory = here
 
-If BoardIsUp(PROBE_URL) Then
-    OpenBoard BOARD_URL
-    WScript.Quit 0
-End If
-
 dataDir = sh.ExpandEnvironmentStrings("%DEPARTURES_HOME%")
 If dataDir = "%DEPARTURES_HOME%" Or dataDir = "" Then
     dataDir = sh.ExpandEnvironmentStrings("%USERPROFILE%") & "\.departures"
@@ -29,6 +30,10 @@ EnsureFolder dataDir
 
 logPath = dataDir & "\launcher.log"
 If Not StartLog(logPath) Then
+    If BoardIsUp(PROBE_URL) Then
+        OpenBoard BOARD_URL
+        WScript.Quit 0
+    End If
     logPath = FreshLog(dataDir)
     If Not StartLog(logPath) Then logPath = ""
 End If
