@@ -85,6 +85,52 @@ def test_keeps_the_newest_14_days(board):
     assert f"departures-{days_ago[0].isoformat()}.db" not in kept
 
 
+def back_up_on(day):
+    """Something changes on the board, then that day's backup is taken."""
+    with closing(sqlite3.connect(db.DB_PATH)) as conn:
+        conn.execute("INSERT INTO logs (project_id, text, created_at) VALUES ('departures', ?, ?)",
+                     (f"worked on {day}", day.isoformat()))
+        conn.commit()
+    return db.backup_daily(day)
+
+
+def test_a_clock_set_back_never_deletes_the_backup_just_made(board):
+    # Fourteen backups from before the PC's clock jumped back (a dead clock
+    # battery can reset it to an old year). Today's copy sorts oldest by name.
+    start_board()
+    for n in range(1, db.BACKUP_DAYS):
+        back_up_on(date.today() + timedelta(days=n))
+    assert len(daily_backups()) == db.BACKUP_DAYS
+
+    made = back_up_on(date(2020, 1, 1))
+    assert made is not None and made.exists()
+    assert "departures-2020-01-01.db" in daily_backups()
+    assert len(daily_backups()) == db.BACKUP_DAYS
+
+
+def test_an_old_backup_that_cannot_be_deleted_is_left_for_later(board, monkeypatch, caplog):
+    asyncio.run(db.init_db())
+    oldest = back_up_on(date.today() - timedelta(days=30))
+    for n in range(29, 14, -1):  # fifteen more old days
+        shutil.copyfile(oldest, db.backup_dir() / f"departures-{(date.today() - timedelta(days=n)).isoformat()}.db")
+
+    real_unlink = Path.unlink
+
+    def unlink(self, missing_ok=False):  # the oldest is open in another program
+        if self == oldest:
+            raise PermissionError(13, "The file is being used by another process", str(self))
+        return real_unlink(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", unlink)
+    made = back_up_on(date.today())  # no error: the day's backup is done
+
+    assert made is not None and made.exists()
+    kept = daily_backups()
+    assert oldest.name in kept
+    assert len(kept) == db.BACKUP_DAYS + 1  # every other old copy was still pruned
+    assert "couldn't delete old backup" in caplog.text
+
+
 def test_neighbor_requests_do_not_trigger_backups(neighbor, monkeypatch):
     neighbor.get("/api/projects")  # turned away at the door
     monkeypatch.setattr(server, "_today", lambda: date.today() + timedelta(days=1))

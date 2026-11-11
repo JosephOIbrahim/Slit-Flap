@@ -1,6 +1,7 @@
 """DEPARTURES — SQLite data layer (aiosqlite)."""
 
 import asyncio
+import logging
 import os
 import secrets
 import shutil
@@ -17,6 +18,8 @@ import aiosqlite
 # DEPARTURES_HOME overrides the data dir (isolated boards, tests)
 DB_DIR = Path(os.environ.get("DEPARTURES_HOME", str(Path.home() / ".departures")))
 DB_PATH = DB_DIR / "departures.db"
+
+log = logging.getLogger("uvicorn.error")  # the board's own terminal (and launcher.log)
 
 
 def _now() -> str:
@@ -321,11 +324,20 @@ def _snapshot(dest: Path) -> Path:
     return dest
 
 
-def _prune(pattern: str, keep: int, newest_last) -> None:
-    """Delete all but the newest `keep` backups matching pattern."""
-    found = sorted(backup_dir().glob(pattern), key=newest_last)
-    for old in found[:-keep]:
-        old.unlink(missing_ok=True)
+def _prune(pattern: str, keep: int, newest_last, made: Path) -> None:
+    """Delete all but the newest `keep` backups matching pattern.
+
+    `made`, the copy just taken, is always one of the ones kept: if the PC's
+    clock was set back (say, to 2020), its name sorts as the oldest, and it
+    would otherwise be deleted the moment it was made, every day. An old copy
+    that can't be deleted (open in another program) is left for next time.
+    """
+    others = sorted((p for p in backup_dir().glob(pattern) if p != made), key=newest_last)
+    for old in others[:max(0, len(others) - (keep - 1))]:
+        try:
+            old.unlink(missing_ok=True)
+        except OSError as exc:
+            log.warning("DEPARTURES couldn't delete old backup %s: %s", old.name, exc)
 
 
 def backup_daily(today: date) -> Path | None:
@@ -337,7 +349,7 @@ def backup_daily(today: date) -> Path | None:
     if dest.exists():
         return None
     _snapshot(dest)
-    _prune("departures-????-??-??.db", BACKUP_DAYS, newest_last=lambda p: p.name)
+    _prune("departures-????-??-??.db", BACKUP_DAYS, newest_last=lambda p: p.name, made=dest)
     return dest
 
 
