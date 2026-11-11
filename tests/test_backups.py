@@ -90,6 +90,21 @@ def test_a_day_with_no_changes_gets_no_new_copy(board):
     assert not list(db.backup_dir().glob("*.partial"))
 
 
+def test_a_viewers_visit_does_not_count_as_a_change(board):
+    # Sharing the board read-only updates "last seen" on every visit. That's
+    # bookkeeping, not a change to the board, so a quiet day is still skipped.
+    asyncio.run(db.init_db())
+    invite = asyncio.run(db.add_viewer("friend@example.com"))
+    start_board()  # today's copy includes the viewer row
+    with TestClient(server.app, client=("192.168.1.77", 50000),
+                    base_url="http://192.168.1.10:4040",
+                    cookies={"viewer_token": invite["token"]}) as viewer:
+        assert viewer.get("/api/projects").status_code == 200  # touches last_seen
+    tomorrow = date.today() + timedelta(days=1)
+    assert db.backup_daily(tomorrow) is None
+    assert daily_backups() == [f"departures-{date.today().isoformat()}.db"]
+
+
 def test_keeps_the_newest_14_days(board):
     start_board()  # today's backup
     days_ago = [date.today() - timedelta(days=n) for n in range(40, 20, -1)]

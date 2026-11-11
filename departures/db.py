@@ -342,10 +342,17 @@ def _snapshot(dest: Path, keep=None) -> Path | None:
     return dest
 
 
+# Columns that record when someone looked, not what the board holds. A
+# viewer's visit updates last_seen, and counting that as a change would make
+# every day with a visitor look changed, so quiet days would never be skipped.
+_NOT_CONTENT = {"viewers": {"last_seen"}}
+
+
 def _fingerprint(path: Path) -> str | None:
-    """A digest of everything a board file holds: its tables, indexes and
-    every row. Two files holding the same board get the same digest even
-    when SQLite laid out their pages differently. None if unreadable."""
+    """A digest of what a board holds: its tables and every row, leaving out
+    bookkeeping such as when a viewer last looked. Two files holding the same
+    board get the same digest even when SQLite laid them out differently.
+    None if unreadable."""
     digest = hashlib.sha256()
     try:
         with closing(sqlite3.connect(path)) as conn:
@@ -353,12 +360,15 @@ def _fingerprint(path: Path) -> str | None:
             entries = sorted(conn.execute("SELECT type, name, tbl_name, sql FROM sqlite_master"),
                              key=repr)
             for entry in entries:
-                digest.update(repr(entry).encode() + b"\n")
+                digest.update(repr(entry).encode() + bytes([10]))
                 kind, name = entry[0], entry[1]
                 if kind == "table":
-                    quoted = '"' + name.replace('"', '""') + '"'
-                    for row in sorted(repr(r) for r in conn.execute(f"SELECT * FROM {quoted}")):
-                        digest.update(row.encode() + b"\n")
+                    skip = _NOT_CONTENT.get(name, set())
+                    cols = [c[1] for c in conn.execute(f'PRAGMA table_info("{name}")')
+                            if c[1] not in skip]
+                    picked = ", ".join('"' + c.replace('"', '""') + '"' for c in cols) or "NULL"
+                    for row in sorted(repr(r) for r in conn.execute(f'SELECT {picked} FROM "{name}"')):
+                        digest.update(row.encode() + bytes([10]))
     except sqlite3.DatabaseError:
         return None
     return digest.hexdigest()
