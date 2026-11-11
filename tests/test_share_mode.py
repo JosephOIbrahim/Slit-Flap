@@ -1,6 +1,9 @@
 """Share mode: nothing outside the built frontend is ever served, and
 viewers stay read-only guests."""
 
+import os
+from pathlib import Path
+
 import pytest
 
 from departures import db
@@ -34,6 +37,52 @@ def test_owner_gets_the_board(owner):
 
     # Unknown page paths still land on the board
     assert "DEPARTURES" in owner.get("/some/page").text
+
+
+def test_files_with_unusual_names_are_served(board, owner):
+    dist = board / "app" / "dist"
+    (dist / "assets" / "logo@2x.png").write_bytes(b"PNG-BYTES")
+    (dist / "assets" / "my font (bold)~1.woff2").write_bytes(b"FONT-BYTES")
+    assert owner.get("/assets/logo@2x.png").content == b"PNG-BYTES"
+    assert owner.get("/assets/my%20font%20(bold)~1.woff2").content == b"FONT-BYTES"
+
+
+def test_a_missing_file_is_a_404_not_the_board(owner):
+    for path in ("/assets/gone-123.js", "/favicon.ico", "/assets/board.js.map"):
+        r = owner.get(path)
+        assert r.status_code == 404, path
+        assert "DEPARTURES" not in r.text
+    assert "DEPARTURES" in owner.get("/some/page").text  # page paths still get the board
+
+
+def test_head_requests_work(owner):
+    r = owner.head("/assets/board.js")
+    assert r.status_code == 200
+    assert r.content == b""
+    assert int(r.headers["content-length"]) == len("console.log('board')")
+    assert owner.head("/").status_code == 200
+
+
+def test_request_paths_never_reach_the_filesystem(owner, monkeypatch):
+    # Files are matched against a list the server makes itself. Record every
+    # stat and path lookup during requests aimed outside the frontend: none
+    # may carry the request's own path.
+    touched = []
+    real_stat, real_lstat, real_realpath = os.stat, os.lstat, os.path.realpath
+
+    def spy(real):
+        def wrapper(path, *args, **kwargs):
+            touched.append(str(path))
+            return real(path, *args, **kwargs)
+        return wrapper
+
+    monkeypatch.setattr(os, "stat", spy(real_stat))
+    monkeypatch.setattr(os, "lstat", spy(real_lstat))
+    monkeypatch.setattr(os.path, "realpath", spy(real_realpath))
+    for probe in ("/assets/MARKER-1.js", "/C:/MARKER-2/x.txt", "/..%2FMARKER-3.txt",
+                  "//MARKER-4/share/x.txt", "/CON", "/assets/%2e%2e%5CMARKER-5.txt"):
+        owner.get(probe)
+    assert not [p for p in touched if "MARKER" in p or p.endswith("CON")]
 
 
 def test_unknown_api_path_is_a_404_not_the_board(owner):

@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import math
+import os
 import re
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timezone
@@ -294,61 +295,63 @@ async def remove_viewer(vid: str):
 
 # ── Static file serving ──────────────────────────────────────────
 #
-# Only plain file names inside the built frontend are ever served, e.g.
-# "index.html" or "assets/index-Db_14rvD.js". Every path segment is
-# checked as text *before* anything touches the disk: on Windows, merely
-# asking whether a path exists can reach outside the folder (a drive
-# letter, a network share, a device name).
+# The server lists the built frontend's files itself and serves a request
+# only when it names one of them exactly ("index.html",
+# "assets/index-Db_14rvD.js"). A path from a request is never handed to the
+# filesystem, so drive letters, network shares, device names, "..", links
+# and odd encodings have nothing to work with, while a file with "@",
+# spaces or brackets in its name is still served.
 
-_SAFE_SEGMENT = re.compile(r"[A-Za-z0-9_-][A-Za-z0-9._-]*")
-_WINDOWS_DEVICES = {"CON", "PRN", "AUX", "NUL"} | {
-    f"{kind}{n}" for kind in ("COM", "LPT") for n in range(10)
-}
 _NOT_BUILT = {"error": "Frontend not built. Run: cd frontend && npm run build"}
+_NOT_FOUND = {"error": "Not found"}
 
 
-def _is_safe_segment(segment: str) -> bool:
-    return (
-        _SAFE_SEGMENT.fullmatch(segment) is not None
-        and not segment.endswith(".")
-        and segment.split(".")[0].upper() not in _WINDOWS_DEVICES
-    )
-
-
-def _dist_file(rel_path: str) -> Path | None:
-    """The real file inside DIST_DIR that rel_path names, or None."""
-    parts = rel_path.split("/")
-    if not all(_is_safe_segment(p) for p in parts):
-        return None
+def _dist_files() -> dict[str, Path]:
+    """Every real file inside DIST_DIR, keyed by its URL path."""
     root = DIST_DIR.resolve()
-    try:
-        found = root.joinpath(*parts).resolve(strict=True)
-    except (OSError, RuntimeError):
-        return None
-    if found.is_relative_to(root) and found.is_file():
+    found: dict[str, Path] = {}
+    if not root.is_dir():
         return found
-    return None
+    for folder, subfolders, names in os.walk(root):
+        subfolders[:] = [s for s in subfolders if not s.startswith(".")]
+        for name in names:
+            if name.startswith("."):
+                continue
+            path = Path(folder) / name
+            try:
+                real = path.resolve(strict=True)
+            except (OSError, RuntimeError):
+                continue
+            if real.is_relative_to(root) and real.is_file():  # links stay inside
+                found[path.relative_to(root).as_posix()] = real
+    return found
 
 
-def _index() -> FileResponse | JSONResponse:
-    index = _dist_file("index.html")
+def _index(files: dict[str, Path] | None = None) -> FileResponse | JSONResponse:
+    index = (files if files is not None else _dist_files()).get("index.html")
     if index is None:
         return JSONResponse(_NOT_BUILT, status_code=404)
     # Always revalidate: a cached page can point at assets a rebuild removed.
     return FileResponse(index, headers={"Cache-Control": "no-cache"})
 
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 async def serve_root():
     return _index()
 
 
-# Built files by name; any other non-API path gets the board itself.
-@app.get("/{full_path:path}")
+# Built files by exact name. A request that names a file that isn't there
+# gets a 404; any other path (no file name) gets the board itself.
+@app.api_route("/{full_path:path}", methods=["GET", "HEAD"])
 async def serve_static(full_path: str):
     if full_path == "api" or full_path.startswith("api/"):
-        return JSONResponse({"error": "Not found"}, status_code=404)
-    found = _dist_file(full_path)
-    if found is None or found.name == "index.html":
-        return _index()
+        return JSONResponse(_NOT_FOUND, status_code=404)
+    files = _dist_files()
+    found = files.get(full_path)
+    if found is None:
+        if "." in full_path.rsplit("/", 1)[-1]:
+            return JSONResponse(_NOT_FOUND, status_code=404)
+        return _index(files)
+    if full_path == "index.html":
+        return _index(files)
     return FileResponse(found)
