@@ -136,9 +136,16 @@ def _describe(counts: dict) -> str:
 
 @cli.command()
 @click.option("--yes", "-y", is_flag=True, help="Skip the confirmation prompt.")
-def seed(yes: bool) -> None:
+@click.option("--port", type=int, default=None,
+              help="Port the board runs on, if not 4040 (seed won't run while it's up).")
+@click.pass_context
+def seed(ctx, yes: bool, port: int | None) -> None:
     """Replace the board with the demo projects (saves a backup first)."""
     from departures import db
+
+    if port is None:  # `departures --port N seed` names the port up front
+        port = ctx.parent.params.get("port", 4040)
+    _refuse_if_running(port)  # an open board would keep showing the old projects
 
     counts = db.board_counts()
     if counts and not yes:

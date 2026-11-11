@@ -54,6 +54,20 @@ def test_seed_asks_first_and_no_keeps_the_board(board):
     assert seed_backups() == []
 
 
+def test_seed_refuses_while_the_board_is_running(board, monkeypatch):
+    # A board left running would keep the projects it loaded; saves from its
+    # open page would then be acknowledged and go nowhere.
+    from departures import cli as cli_module
+
+    my_board()
+    monkeypatch.setattr(cli_module, "_board_already_running", lambda port: True)
+    result = run_seed("--yes")
+    assert result.exit_code != 0
+    assert "running" in result.output
+    assert "mine" in project_ids()
+    assert seed_backups() == []
+
+
 def test_seed_without_a_terminal_answer_does_nothing(board):
     my_board()
     result = run_seed(input="")  # e.g. run from a script with no keyboard
