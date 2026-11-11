@@ -162,6 +162,28 @@ def seed(yes: bool) -> None:
     click.echo(f"{WHITE}Done. Database reset to seed data.{RESET}")
 
 
+def _links_coming_back(staged: Path) -> list[str]:
+    """Emails on viewer links the backup has and the current board doesn't:
+    links removed since the backup was taken would work again."""
+    from departures import db
+
+    if not db.DB_PATH.exists():
+        return []
+    incoming = db.viewer_links(staged) or {}
+    current = db.viewer_links() or {}  # unreadable now: every link in the backup counts
+    return sorted({email for token, email in incoming.items() if token not in current})
+
+
+def _warn_links(emails: list[str], restored: bool) -> None:
+    if restored:
+        click.echo(f"{AMBER}Viewer links that came back with the backup:{RESET} {', '.join(emails)}")
+    else:
+        click.echo(f"{AMBER}Viewer links in the backup that aren't on the board now:{RESET} {', '.join(emails)}")
+    lead = "They work again" if restored else "Restoring brings them back"
+    click.echo(f"{AMBER}{lead}: anyone holding one can view the board while it's shared on "
+               f"your network. Remove any you don't want in the board's Share panel.{RESET}")
+
+
 def _refuse_if_running(port: int) -> None:
     if _board_already_running(port):
         raise click.ClickException(
@@ -212,6 +234,7 @@ def restore(ctx, backup: str | None, yes: bool, port: int | None) -> None:
 
     installed = False
     try:
+        returning = _links_coming_back(staged)
         if not yes:
             current = db.board_counts()
             click.echo(f"{AMBER}This replaces the board at{RESET}")
@@ -221,6 +244,8 @@ def restore(ctx, backup: str | None, yes: bool, port: int | None) -> None:
             click.echo(f"{AMBER}with the backup{RESET}")
             click.echo(f"  {WHITE}{source}{RESET}")
             click.echo(f"  {DIM}backup: {_describe(incoming)}{RESET}")
+            if returning:
+                _warn_links(returning, restored=False)
             if current:
                 click.echo(f"{AMBER}The current board is kept in the backups folder, "
                            f"so this can be undone.{RESET}")
@@ -242,6 +267,8 @@ def restore(ctx, backup: str | None, yes: bool, port: int | None) -> None:
         click.echo(f"{WHITE}{label}{RESET} {kept[0]}")
         for extra in kept[1:]:
             click.echo(f"  {DIM}with {extra.name}{RESET}")
+    if yes and returning:
+        _warn_links(returning, restored=True)
     click.echo(f"{DIM}Start the board with: departures{RESET}")
 
 

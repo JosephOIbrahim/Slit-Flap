@@ -592,6 +592,22 @@ def test_restore_checks_again_after_asking(restore, monkeypatch):
     assert no_restore_leftovers()
 
 
+def test_restore_warns_when_removed_viewer_links_would_work_again(restore):
+    asyncio.run(db.init_db())
+    removed = asyncio.run(db.add_viewer("removed@example.com"))
+    asyncio.run(db.add_viewer("still-invited@example.com"))
+    backup = db.backup_daily(date.today())
+    asyncio.run(db.remove_viewer(removed["id"]))  # the owner revokes a link
+
+    asked = restore(backup, input="n\n")
+    assert "removed@example.com" in asked.output and "brings them back" in asked.output
+    assert "still-invited@example.com" not in asked.output  # that one never went away
+
+    done = restore(backup, "--yes")
+    assert done.exit_code == 0, done.output
+    assert "came back with the backup" in done.output and "removed@example.com" in done.output
+
+
 def test_restore_refuses_while_the_board_is_running(restore, monkeypatch):
     start_board()
     backup = db.backup_dir() / daily_backups()[0]

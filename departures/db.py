@@ -469,6 +469,41 @@ def _count_tables(conn: sqlite3.Connection) -> dict[str, int | None]:
     return counts
 
 
+def _read_copy(path: Path, read):
+    """read(conn) on a private copy of a board file and its -wal. The copy
+    includes changes still in the -wal (after a crash), and the board's own
+    files are never opened by SQLite, which could fold that -wal in."""
+    with tempfile.TemporaryDirectory(prefix="departures-read-", ignore_cleanup_errors=True) as tmp:
+        copy = Path(tmp) / "board.db"
+        shutil.copyfile(path, copy)
+        wal = path.with_name(path.name + "-wal")
+        if wal.is_file():
+            shutil.copyfile(wal, copy.with_name(copy.name + "-wal"))
+        with closing(sqlite3.connect(copy)) as conn:
+            return read(conn)
+
+
+def viewer_links(path: Path | None = None) -> dict[str, str] | None:
+    """The viewer links on a board, as {token: email}. {} for none (or no
+    board), None if the board can't be read."""
+    path = Path(path or DB_PATH)
+    if not path.exists():
+        return {}
+
+    def read(conn):
+        try:
+            return dict(conn.execute("SELECT token, email FROM viewers"))
+        except sqlite3.OperationalError as exc:
+            if "no such table" in str(exc):
+                return {}
+            raise
+
+    try:
+        return _read_copy(path, read)
+    except (OSError, sqlite3.DatabaseError):
+        return None
+
+
 # ── Restore ───────────────────────────────────────────────────────
 #
 # Two steps, so the CLI can show what's coming and ask first:
