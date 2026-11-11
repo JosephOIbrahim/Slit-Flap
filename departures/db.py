@@ -618,7 +618,11 @@ def _keep_board(kept: Path) -> list[Path]:
     lost. Leftover -wal/-shm with no board beside them are kept raw too.
     Returns the files written. Raises BackupTimeout if another program
     holds the board locked."""
-    if DB_PATH.exists():
+    # A zero-byte board with a -wal beside it is a crash, not an empty board:
+    # SQLite's backup would copy the empty file and lose the -wal's changes.
+    empty_with_leftovers = (DB_PATH.exists() and DB_PATH.stat().st_size == 0
+                            and any(side.exists() for side in _sidecars(DB_PATH)))
+    if DB_PATH.exists() and not empty_with_leftovers:
         try:
             return [_snapshot(kept)]
         except BackupCheckFailed:
@@ -629,6 +633,7 @@ def _keep_board(kept: Path) -> list[Path]:
             if src.exists():
                 dst = kept.with_name(kept.name + src.name[len(DB_PATH.name):])
                 shutil.copyfile(src, dst)
+                _fsync(dst)
                 written.append(dst)
     except BaseException:
         for f in written:

@@ -512,6 +512,23 @@ def test_leftovers_of_a_missing_board_are_never_replayed_onto_the_restore(restor
     assert ids_in(db.DB_PATH) == ids_in(backup)
 
 
+def test_restore_keeps_the_wal_of_a_zero_byte_board(restore, tmp_path):
+    # A crash can leave departures.db empty with the real changes still in
+    # its -wal. The copy kept must include that -wal, not an empty board.
+    start_board()
+    backup = db.backup_dir() / daily_backups()[0]
+    crash_while_writing("INSERT INTO projects (id, name) VALUES ('wonly', 'WAL Only');")
+    wal = db.DB_PATH.with_name("departures.db-wal")
+    assert wal.stat().st_size > 0
+    original_wal = wal.read_bytes()
+    open(db.DB_PATH, "wb").close()  # the main file cut to nothing
+
+    result = restore(backup, "--yes")
+    assert result.exit_code == 0, result.output
+    [kept_wal] = db.backup_dir().glob("*-before-restore.db-wal")
+    assert kept_wal.read_bytes() == original_wal  # the changes are kept, not deleted
+
+
 def test_a_restore_that_fails_at_the_swap_leaves_the_board_as_it_was(restore, monkeypatch):
     start_board()
     backup = db.backup_dir() / daily_backups()[0]
