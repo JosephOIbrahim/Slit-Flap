@@ -2,9 +2,10 @@
 
 import os
 import secrets
+import sqlite3
 import uuid
-from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from contextlib import asynccontextmanager, closing
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import aiosqlite
@@ -235,6 +236,58 @@ async def _insert_seeds(db) -> None:
         )
     await _seed_events_settings(db)
     await db.commit()
+
+
+# ── Backups ───────────────────────────────────────────────────────
+#
+# Plain copies of the board in <data dir>/backups/, made with SQLite's
+# online backup API (safe while the server is writing). To restore one:
+# stop the board, then copy the backup over departures.db.
+
+BACKUP_DAYS = 14  # daily snapshots kept
+
+
+def backup_dir() -> Path:
+    return DB_DIR / "backups"
+
+
+def _snapshot(dest: Path) -> Path:
+    """Copy the live database to dest: verified, self-contained, atomic."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    partial = dest.with_name(dest.name + ".partial")
+    partial.unlink(missing_ok=True)
+    try:
+        with closing(sqlite3.connect(DB_PATH)) as src, closing(sqlite3.connect(partial)) as out:
+            src.backup(out)
+            out.execute("PRAGMA journal_mode=DELETE")  # one file, no -wal sidecar
+            verdict = out.execute("PRAGMA quick_check").fetchone()[0]
+        if verdict != "ok":
+            raise RuntimeError(f"backup failed its integrity check: {verdict}")
+        os.replace(partial, dest)
+    except BaseException:
+        partial.unlink(missing_ok=True)
+        raise
+    return dest
+
+
+def _prune(pattern: str, keep: int, newest_last) -> None:
+    """Delete all but the newest `keep` backups matching pattern."""
+    found = sorted(backup_dir().glob(pattern), key=newest_last)
+    for old in found[:-keep]:
+        old.unlink(missing_ok=True)
+
+
+def backup_daily(today: date) -> Path | None:
+    """Snapshot the board once per day. Returns the new file, or None if
+    there is no board yet or today's snapshot already exists."""
+    if not DB_PATH.exists():
+        return None
+    dest = backup_dir() / f"departures-{today.isoformat()}.db"
+    if dest.exists():
+        return None
+    _snapshot(dest)
+    _prune("departures-????-??-??.db", BACKUP_DAYS, newest_last=lambda p: p.name)
+    return dest
 
 
 # ── Init + seed ───────────────────────────────────────────────────

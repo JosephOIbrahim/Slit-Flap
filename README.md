@@ -119,6 +119,8 @@ flowchart TB
 
 **Everything runs on your machine.** No cloud. No accounts. No subscriptions. Your data lives in a single file at `~/.departures/departures.db`.
 
+**Backups happen on their own.** The first time the board starts or is used each day, a copy goes to `~/.departures/backups/departures-YYYY-MM-DD.db`. The newest 14 are kept. To restore one: stop the board (Ctrl+C), copy the backup over `~/.departures/departures.db`, and start the board again.
+
 ---
 
 ## Features

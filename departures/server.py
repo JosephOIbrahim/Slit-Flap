@@ -1,9 +1,11 @@
 """DEPARTURES — FastAPI server. Serves API + built frontend."""
 
+import asyncio
+import logging
 import math
 import re
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -22,12 +24,36 @@ DIST_DIR = Path(__file__).parent / "frontend" / "dist"
 
 _session_started_at: str = ""
 
+# ── Daily backup ──────────────────────────────────────────────────
+
+log = logging.getLogger("uvicorn.error")
+_backup_day: date | None = None
+
+
+def _today() -> date:
+    return date.today()
+
+
+async def _daily_backup() -> None:
+    """Snapshot the board on the first start or request of each local day
+    (the server can stay up for days, so startup alone isn't enough)."""
+    global _backup_day
+    today = _today()
+    if _backup_day == today or not db.DB_PATH.exists():
+        return
+    _backup_day = today  # claim the day first, so concurrent requests skip
+    try:
+        await asyncio.to_thread(db.backup_daily, today)
+    except Exception as exc:  # a failed backup must never take the board down
+        log.warning("DEPARTURES daily backup failed: %s", exc)
+
 
 # ── Lifespan ──────────────────────────────────────────────────────
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _session_started_at
+    await _daily_backup()  # before init, so it captures exactly what's on disk
     await db.init_db()
     _session_started_at = datetime.now(timezone.utc).isoformat()
     yield
@@ -44,6 +70,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ── Backup middleware (runs after auth: only admitted requests) ───
+
+@app.middleware("http")
+async def daily_backup_middleware(request: Request, call_next):
+    await _daily_backup()
+    return await call_next(request)
 
 
 # ── Auth middleware ───────────────────────────────────────────────
