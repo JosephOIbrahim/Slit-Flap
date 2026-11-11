@@ -304,6 +304,29 @@ def restore_tmp_dir() -> Path:
     return DB_DIR / "restore-tmp"
 
 
+_RESTORE_TMP_MAX_AGE = 60  # seconds before a leftover copy counts as abandoned
+
+
+def _sweep_restore_tmp() -> None:
+    """Remove private copies a killed restore left in the data folder. Only
+    ones older than a minute, so a restore running right now keeps its own."""
+    folder = restore_tmp_dir()
+    if not folder.is_dir():
+        return
+    cutoff = time.time() - _RESTORE_TMP_MAX_AGE
+    for leftover in folder.iterdir():
+        try:
+            if leftover.stat().st_mtime > cutoff:
+                continue
+            if leftover.is_dir():
+                shutil.rmtree(leftover, ignore_errors=True)
+            else:
+                leftover.unlink(missing_ok=True)
+        except OSError as exc:  # open in another program: leave it for next time
+            log.warning("DEPARTURES couldn't clear an old restore copy %s: %s",
+                        leftover.name, exc)
+
+
 @contextmanager
 def _private_board(path: Path):
     """A private copy of a board file and its -wal/-journal, inside the data
@@ -564,13 +587,10 @@ def _count_tables(conn: sqlite3.Connection) -> dict[str, int | None]:
 def _read_copy(path: Path, read):
     """read(conn) on a private copy of a board file and its -wal. The copy
     includes changes still in the -wal (after a crash), and the board's own
-    files are never opened by SQLite, which could fold that -wal in."""
-    with tempfile.TemporaryDirectory(prefix="departures-read-", ignore_cleanup_errors=True) as tmp:
-        copy = Path(tmp) / "board.db"
-        shutil.copyfile(path, copy)
-        wal = path.with_name(path.name + "-wal")
-        if wal.is_file():
-            shutil.copyfile(wal, copy.with_name(copy.name + "-wal"))
+    files are never opened by SQLite, which could fold that -wal in. The
+    copy lives in the data folder, not %TEMP%: a killed restore must not
+    leave every project and viewer token in the system's scratch space."""
+    with _private_board(Path(path)) as copy:
         with closing(sqlite3.connect(copy)) as conn:
             return read(conn)
 
@@ -660,6 +680,7 @@ def stage_restore(backup: Path) -> tuple[Path, dict[str, int | None]]:
     if DB_PATH.exists() and backup.resolve() == DB_PATH.resolve():
         raise RestoreError("That's the live board itself, not a backup.")
     DB_DIR.mkdir(parents=True, exist_ok=True)
+    _sweep_restore_tmp()  # copies a killed restore left behind
     staged = _staging_path()
     try:
         with open(staged, "xb"):  # created exclusively: the name is this restore's

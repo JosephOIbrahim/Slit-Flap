@@ -887,6 +887,66 @@ def test_restore_onto_a_machine_with_no_board(restore, tmp_path):
     assert "Previous board kept" not in result.output
 
 
+# ── A killed restore leaves no board copy where the owner won't look ──
+
+def test_the_private_read_copy_lives_in_the_data_folder(board):
+    asyncio.run(db.init_db())
+    asyncio.run(db.add_viewer("v@example.com"))
+    seen = []
+
+    def read(conn):
+        seen.append(Path(conn.execute("PRAGMA database_list").fetchone()[2]))
+        return dict(conn.execute("SELECT token, email FROM viewers"))
+
+    assert db._read_copy(db.DB_PATH, read) == db.viewer_links()
+    [copied] = seen
+    assert copied.is_relative_to(db.restore_tmp_dir())
+    folder = db.restore_tmp_dir()
+    assert not folder.exists() or not list(folder.iterdir())  # cleaned up afterwards
+
+
+def test_a_killed_read_leaves_nothing_in_the_temp_folder(board, tmp_path, monkeypatch):
+    import tempfile
+
+    asyncio.run(db.init_db())
+    pretend_temp = tmp_path / "pretend-temp"
+    pretend_temp.mkdir()
+
+    class KilledBeforeCleanup:
+        """What a process killed mid-read leaves behind: a TemporaryDirectory
+        that never got the chance to clean itself up."""
+        def __init__(self, prefix="", ignore_cleanup_errors=False, **_):
+            self.path = pretend_temp / (prefix + "left-behind")
+            self.path.mkdir()
+
+        def __enter__(self):
+            return str(self.path)
+
+        def __exit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(tempfile, "TemporaryDirectory", KilledBeforeCleanup)
+    db.viewer_links()
+    assert list(pretend_temp.iterdir()) == []
+
+
+def test_an_old_restore_copy_in_the_data_folder_is_swept(board):
+    start_board()
+    backup = db.backup_dir() / daily_backups()[0]
+    old = db.restore_tmp_dir() / "board-1-old"
+    old.mkdir(parents=True)
+    (old / "board.db").write_bytes(b"a board copy a killed restore left")
+    stamp = time.time() - 120
+    os.utime(old, (stamp, stamp))
+    fresh = db.restore_tmp_dir() / "board-2-running"
+    fresh.mkdir()
+    (fresh / "board.db").write_bytes(b"a restore running right now")
+
+    db.stage_restore(backup)  # a restore start sweeps the folder
+    assert not old.exists()
+    assert fresh.exists()  # a restore in progress keeps its own copy
+
+
 # ── Counting what's on a board (shown before seed and restore) ──
 
 def through_network_share(path):
