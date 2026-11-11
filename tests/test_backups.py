@@ -861,6 +861,29 @@ def test_restore_warns_when_removed_viewer_links_would_work_again(restore):
     assert "came back with the backup" in done.output and "removed@example.com" in done.output
 
 
+def test_restore_says_when_it_could_not_check_viewer_links(restore, monkeypatch):
+    # Reading the backup's links went through a private copy, and a copy
+    # that failed (a full disk, say) looked like "no links come back": the
+    # owner was told nothing. The staged backup is already a checked private
+    # copy, so it is read directly now; a side that still can't be read is
+    # said out loud, with the links the backup holds.
+    asyncio.run(db.init_db())
+    removed = asyncio.run(db.add_viewer("removed@example.com"))
+    backup = db.backup_daily(date.today())
+    asyncio.run(db.remove_viewer(removed["id"]))
+
+    def unreadable(path):  # the current board's private read copy can't be made
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(db, "_private_board", unreadable)
+    asked = restore(backup, input="n\n")
+
+    assert asked.exit_code != 0  # the owner said no
+    assert "Couldn't check viewer links; the backup has these links:" in asked.output
+    assert "removed@example.com" in asked.output
+    assert no_restore_leftovers()
+
+
 def test_restore_refuses_while_the_board_is_running(restore, monkeypatch):
     start_board()
     backup = db.backup_dir() / daily_backups()[0]

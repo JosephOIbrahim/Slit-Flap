@@ -15,11 +15,14 @@ if sys.stdout.encoding != "utf-8":
 
 import asyncio
 import json
+import sqlite3
 import threading
 import time
 import urllib.request
 import webbrowser
+from contextlib import closing
 from pathlib import Path
+from typing import NamedTuple
 
 import click
 
@@ -169,16 +172,59 @@ def seed(ctx, yes: bool, port: int | None) -> None:
     click.echo(f"{WHITE}Done. Database reset to seed data.{RESET}")
 
 
-def _links_coming_back(staged: Path) -> list[str]:
-    """Emails on viewer links the backup has and the current board doesn't:
-    links removed since the backup was taken would work again."""
+class _LinkCheck(NamedTuple):
+    coming_back: list[str]          # links the restore puts back on the board
+    on_backup: dict[str, str] | None  # every link the backup holds; None if unreadable
+    checked: bool                   # False when a side couldn't be read
+
+
+def _links_on(path: Path) -> dict[str, str] | None:
+    """The viewer links in one board file, read in place. The staged backup
+    is already a private, integrity-checked copy with any journal folded in,
+    so copying it again (which a full disk could fail) buys nothing. None
+    if the file can't be read."""
+    path = Path(path)
+    if not path.is_file():
+        return None
+    try:
+        with closing(sqlite3.connect(path)) as conn:
+            return dict(conn.execute("SELECT token, email FROM viewers"))
+    except (OSError, sqlite3.DatabaseError):
+        return None
+
+
+def _check_links(staged: Path) -> _LinkCheck:
+    """Which viewer links the backup would bring back: links it has and the
+    board no longer does. `checked` is False when either side can't be read,
+    so the caller says so instead of warning about nothing."""
     from departures import db
 
+    on_backup = _links_on(staged)
     if not db.DB_PATH.exists():
-        return []
-    incoming = db.viewer_links(staged) or {}
-    current = db.viewer_links() or {}  # unreadable now: every link in the backup counts
-    return sorted({email for token, email in incoming.items() if token not in current})
+        return _LinkCheck([], on_backup, True)  # nothing on the board is being replaced
+    current = db.viewer_links()
+    if on_backup is None or current is None:
+        return _LinkCheck([], on_backup, False)
+    coming_back = sorted({email for token, email in on_backup.items() if token not in current})
+    return _LinkCheck(coming_back, on_backup, True)
+
+
+def _warn_unchecked(links: _LinkCheck) -> None:
+    """Say the link check couldn't run, and list what the backup holds, so
+    the warning isn't silently skipped."""
+    if links.on_backup is None:
+        click.echo(f"{AMBER}Couldn't check viewer links: the backup's own link list can't "
+                   f"be read either. Restore only if you trust this backup.{RESET}")
+        return
+    emails = sorted(set(links.on_backup.values()))
+    if not emails:
+        click.echo(f"{DIM}Couldn't check viewer links; the backup has no viewer links.{RESET}")
+        return
+    click.echo(f"{AMBER}Couldn't check viewer links; the backup has these links:{RESET} "
+               f"{', '.join(emails)}")
+    click.echo(f"{AMBER}Restoring puts them back: anyone holding one can view the board "
+               f"while it's shared on your network. Remove any you don't want in the "
+               f"board's Share panel.{RESET}")
 
 
 def _warn_links(emails: list[str], restored: bool) -> None:
@@ -281,7 +327,7 @@ def restore(ctx, backup: str | None, yes: bool, port: int | None) -> None:
     interrupted = False
     kept: list[Path] = []
     try:
-        returning = _links_coming_back(staged)
+        links = _check_links(staged)
         if not yes:
             current = db.board_counts()
             click.echo(f"{AMBER}This replaces the board at{RESET}")
@@ -291,13 +337,18 @@ def restore(ctx, backup: str | None, yes: bool, port: int | None) -> None:
             click.echo(f"{AMBER}with the backup{RESET}")
             click.echo(f"  {WHITE}{source}{RESET}")
             click.echo(f"  {DIM}backup: {_describe(incoming)}{RESET}")
-            if returning:
-                _warn_links(returning, restored=False)
+            if links.checked:
+                if links.coming_back:
+                    _warn_links(links.coming_back, restored=False)
+            else:
+                _warn_unchecked(links)
             if current:
                 click.echo(f"{AMBER}The current board is kept in the backups folder, "
                            f"so this can be undone.{RESET}")
             click.confirm("Continue?", abort=True)
             _refuse_if_running(port)  # it may have been started while the question waited
+        elif not links.checked:
+            _warn_unchecked(links)  # --yes skips the prompt, not the warning
         board_was_missing = not db.DB_PATH.exists()
         staged_id = db._file_identity(staged)
         kept_before = _before_restore_files()
@@ -330,8 +381,8 @@ def restore(ctx, backup: str | None, yes: bool, port: int | None) -> None:
             click.echo(f"{WHITE}{label}{RESET} {kept[0]}")
             for extra in kept[1:]:
                 click.echo(f"  {DIM}with {extra.name}{RESET}")
-        if returning and (yes or interrupted):
-            _warn_links(returning, restored=True)
+        if links.coming_back and (yes or interrupted):
+            _warn_links(links.coming_back, restored=True)
         click.echo(f"{DIM}Start the board with: departures{RESET}")
     except KeyboardInterrupt:
         click.echo(f"{AMBER}Ctrl+C came after the board was replaced; the restore is complete.{RESET}")
