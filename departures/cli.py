@@ -191,6 +191,44 @@ def _warn_links(emails: list[str], restored: bool) -> None:
                f"your network. Remove any you don't want in the board's Share panel.{RESET}")
 
 
+def _before_restore_files() -> set[Path]:
+    """The before-restore copies already in the backups folder."""
+    from departures import db
+
+    folder = db.backup_dir()
+    return set(folder.glob("*-before-restore*")) if folder.is_dir() else set()
+
+
+def _new_kept(before: set[Path]) -> list[Path]:
+    """The before-restore files a restore just wrote, the main copy first.
+    A restore cut short after the swap can't hand its list back, so it's
+    read off the folder instead of guessed."""
+    files = _before_restore_files() - before
+    return sorted(files, key=lambda p: (not p.name.endswith(".db"), p.name))
+
+
+_COMPLETE_COPY_CLAIM = ". A complete copy of it is kept at "
+
+
+def _restore_failure_message(exc: Exception, board_was_missing: bool,
+                             kept_now: list[Path]) -> str:
+    """install_restore's message promises "a complete copy" of the board.
+    With no board there was never a complete copy, only leftover working
+    files beside where it was: say what is actually kept, each by name."""
+    from departures import db
+
+    text = str(exc)
+    if not board_was_missing or _COMPLETE_COPY_CLAIM not in text:
+        return text
+    before = text.split(_COMPLETE_COPY_CLAIM, 1)[0]
+    if not kept_now:
+        return (f"{before} There was no board to keep, and its leftover working "
+                f"files couldn't be kept either.")
+    names = ", ".join(p.name for p in kept_now)
+    return (f"{before} There was no board to keep, only leftover working files beside "
+            f"where it was; those are kept in {db.backup_dir()}: {names}.")
+
+
 def _refuse_if_running(port: int) -> None:
     if _board_already_running(port):
         raise click.ClickException(
@@ -240,6 +278,8 @@ def restore(ctx, backup: str | None, yes: bool, port: int | None) -> None:
         raise click.ClickException(str(exc)) from exc
 
     installed = False
+    interrupted = False
+    kept: list[Path] = []
     try:
         returning = _links_coming_back(staged)
         if not yes:
@@ -258,25 +298,43 @@ def restore(ctx, backup: str | None, yes: bool, port: int | None) -> None:
                            f"so this can be undone.{RESET}")
             click.confirm("Continue?", abort=True)
             _refuse_if_running(port)  # it may have been started while the question waited
+        board_was_missing = not db.DB_PATH.exists()
+        staged_id = db._file_identity(staged)
+        kept_before = _before_restore_files()
         try:
             kept = db.install_restore(staged)
+            installed = True
         except db.RestoreError as exc:
-            raise click.ClickException(str(exc)) from exc
-        installed = True
+            if db._file_identity(db.DB_PATH) != staged_id:
+                raise click.ClickException(
+                    _restore_failure_message(exc, board_was_missing,
+                                             _new_kept(kept_before))
+                ) from exc
+            # The rename landed; only install_restore's own report was cut short.
+        except KeyboardInterrupt:
+            if db._file_identity(db.DB_PATH) != staged_id:
+                raise  # nothing was replaced: let the interrupt stop the command
+            interrupted = True
+            kept = _new_kept(kept_before)  # install_restore couldn't hand its list back
     finally:
         if not installed:
-            db.discard_restore(staged)
+            db.discard_restore(staged)  # already renamed away after the swap; harmless
 
-    click.echo(f"{WHITE}Restored:{RESET} {_describe(db.board_counts())}")
-    if kept:
-        whole = kept[0].name.endswith(".db")
-        label = "Previous board kept at:" if whole else "Leftover files of a missing board kept at:"
-        click.echo(f"{WHITE}{label}{RESET} {kept[0]}")
-        for extra in kept[1:]:
-            click.echo(f"  {DIM}with {extra.name}{RESET}")
-    if yes and returning:
-        _warn_links(returning, restored=True)
-    click.echo(f"{DIM}Start the board with: departures{RESET}")
+    if interrupted:
+        click.echo(f"{AMBER}Ctrl+C came after the board was replaced; the restore is complete.{RESET}")
+    try:
+        click.echo(f"{WHITE}Restored:{RESET} {_describe(db.board_counts())}")
+        if kept:
+            whole = kept[0].name.endswith(".db")
+            label = "Previous board kept at:" if whole else "Leftover files of a missing board kept at:"
+            click.echo(f"{WHITE}{label}{RESET} {kept[0]}")
+            for extra in kept[1:]:
+                click.echo(f"  {DIM}with {extra.name}{RESET}")
+        if returning and (yes or interrupted):
+            _warn_links(returning, restored=True)
+        click.echo(f"{DIM}Start the board with: departures{RESET}")
+    except KeyboardInterrupt:
+        click.echo(f"{AMBER}Ctrl+C came after the board was replaced; the restore is complete.{RESET}")
 
 
 @cli.command()

@@ -972,6 +972,65 @@ def test_an_interrupted_restore_says_so_plainly(restore, monkeypatch):
     assert not list(db.DB_DIR.glob("*.restoring*"))
 
 
+def test_a_ctrl_c_after_the_swap_says_the_restore_is_done(restore, monkeypatch):
+    # Ctrl+C used to be caught by Click after the rename, so the owner saw
+    # only "Aborted!" while the board had in fact been replaced, and the
+    # warning about viewer links that came back never printed.
+    asyncio.run(db.init_db())
+    removed = asyncio.run(db.add_viewer("removed@example.com"))
+    asyncio.run(db.add_viewer("still-invited@example.com"))
+    backup = db.backup_daily(date.today())
+    asyncio.run(db.remove_viewer(removed["id"]))  # revoked after the backup
+
+    real_replace = os.replace
+
+    def replace_then_interrupt(src, dst, *args, **kwargs):
+        done = real_replace(src, dst, *args, **kwargs)
+        if Path(dst) == db.DB_PATH:  # the board is now the restored backup
+            raise KeyboardInterrupt()
+        return done
+
+    monkeypatch.setattr(os, "replace", replace_then_interrupt)
+    result = restore(backup, "--yes")
+
+    assert result.exit_code == 0, result.output
+    assert "Aborted!" not in result.output
+    assert "Restored:" in result.output
+    assert "Previous board kept at" in result.output
+    assert "came back with the backup" in result.output and "removed@example.com" in result.output
+    assert ids_in(db.DB_PATH) == ids_in(backup)
+    assert not list(db.DB_DIR.glob("*.restoring*"))
+
+
+def test_a_failed_restore_of_a_missing_board_names_its_leftover_files(restore, tmp_path, monkeypatch):
+    # With the board moved away, only its -wal and -shm are left behind. A
+    # failed swap used to call one of those "a complete copy" and never
+    # mention -shm.
+    start_board()
+    backup = db.backup_dir() / daily_backups()[0]
+    crash_while_writing("INSERT INTO projects (id, name) VALUES ('stale', 'Stale');")
+    db.DB_PATH.rename(tmp_path / "moved-away.db")  # moved by hand; its sidecars stayed
+    wal = db.DB_PATH.with_name("departures.db-wal")
+    shm = db.DB_PATH.with_name("departures.db-shm")
+    assert wal.exists() and shm.exists()
+
+    real_replace = os.replace
+
+    def refuse_the_swap(src, dst, *args, **kwargs):  # the final rename fails
+        if Path(dst) == db.DB_PATH:
+            raise PermissionError(13, "Access is denied", str(dst))
+        return real_replace(src, dst, *args, **kwargs)
+
+    monkeypatch.setattr(os, "replace", refuse_the_swap)
+    result = restore(backup, "--yes")
+
+    assert result.exit_code != 0
+    assert "complete copy" not in result.output
+    assert "leftover working files" in result.output
+    assert "-wal" in result.output and "-shm" in result.output
+    assert not db.DB_PATH.exists()  # still missing: nothing was installed
+
+
 # ── A killed restore leaves no board copy where the owner won't look ──
 
 def test_the_private_read_copy_lives_in_the_data_folder(board):
