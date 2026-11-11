@@ -566,6 +566,32 @@ def test_restore_takes_a_board_from_before_sort_order(restore, tmp_path):
     start_board()  # the board adds the column back and runs on it
 
 
+def test_restore_checks_the_port_the_board_was_started_on(restore, monkeypatch):
+    start_board()
+    backup = db.backup_dir() / daily_backups()[0]
+    asked = []
+    monkeypatch.setattr(cli_module, "_board_already_running", lambda port: asked.append(port) or True)
+
+    result = CliRunner().invoke(cli, ["--port", "9123", "restore", str(backup), "--yes"])
+    assert result.exit_code != 0
+    assert asked == [9123]
+    assert "running on port 9123" in result.output
+
+
+def test_restore_checks_again_after_asking(restore, monkeypatch):
+    start_board()
+    backup = db.backup_dir() / daily_backups()[0]
+    before = ids_in(db.DB_PATH)
+    running = iter([False, True])  # stopped when asked; started while the question waited
+    monkeypatch.setattr(cli_module, "_board_already_running", lambda port: next(running))
+
+    result = restore(backup, input="y\n")
+    assert result.exit_code != 0
+    assert "running" in result.output
+    assert ids_in(db.DB_PATH) == before
+    assert no_restore_leftovers()
+
+
 def test_restore_refuses_while_the_board_is_running(restore, monkeypatch):
     start_board()
     backup = db.backup_dir() / daily_backups()[0]

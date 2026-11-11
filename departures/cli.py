@@ -162,12 +162,22 @@ def seed(yes: bool) -> None:
     click.echo(f"{WHITE}Done. Database reset to seed data.{RESET}")
 
 
+def _refuse_if_running(port: int) -> None:
+    if _board_already_running(port):
+        raise click.ClickException(
+            f"The board is running on port {port}. Stop it first (Ctrl+C in its "
+            "window; if the silent launcher started it, end its python.exe in "
+            "Task Manager), then run this again."
+        )
+
+
 @cli.command()
 @click.argument("backup", required=False)
 @click.option("--yes", "-y", is_flag=True, help="Skip the confirmation prompt.")
-@click.option("--port", default=4040, show_default=True,
-              help="Port the board runs on (restore won't run while it's up).")
-def restore(backup: str | None, yes: bool, port: int) -> None:
+@click.option("--port", type=int, default=None,
+              help="Port the board runs on, if not 4040 (restore won't run while it's up).")
+@click.pass_context
+def restore(ctx, backup: str | None, yes: bool, port: int | None) -> None:
     """Put a backup back as the board. With no BACKUP, list the backups.
 
     BACKUP is a file name from the backups folder, or a path to a file.
@@ -175,6 +185,9 @@ def restore(backup: str | None, yes: bool, port: int) -> None:
     undone by restoring that.
     """
     from departures import db
+
+    if port is None:  # `departures --port N restore ...` names the port up front
+        port = ctx.parent.params.get("port", 4040)
 
     if not backup:
         found = db.list_backups()
@@ -187,12 +200,7 @@ def restore(backup: str | None, yes: bool, port: int) -> None:
         click.echo(f"{DIM}Restore one with: departures restore <name>{RESET}")
         return
 
-    if _board_already_running(port):
-        raise click.ClickException(
-            f"The board is running on port {port}. Stop it first (Ctrl+C in its "
-            "window; if the silent launcher started it, end its python.exe in "
-            "Task Manager), then run this again."
-        )
+    _refuse_if_running(port)
 
     source = Path(backup)
     if not source.exists() and (db.backup_dir() / backup).is_file():
@@ -217,6 +225,7 @@ def restore(backup: str | None, yes: bool, port: int) -> None:
                 click.echo(f"{AMBER}The current board is kept in the backups folder, "
                            f"so this can be undone.{RESET}")
             click.confirm("Continue?", abort=True)
+            _refuse_if_running(port)  # it may have been started while the question waited
         try:
             kept = db.install_restore(staged)
         except db.RestoreError as exc:
