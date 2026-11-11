@@ -831,12 +831,15 @@ async def create_project(data: dict) -> dict:
         return {"id": pid}
 
 
-async def update_project(pid: str, data: dict) -> dict:
-    """Partial update from camelCase dict. Always touches updated_at and last_touched."""
+async def update_project(pid: str, data: dict) -> dict | None:
+    """Partial update from camelCase dict. Always touches updated_at and
+    last_touched. None if no such project, so a save from a page left open
+    across a restore can't be reported as saved when nothing was written."""
     async with _db() as db:
         await PROJECTS.update(db, pid, data, touch=("updated_at", "last_touched"))
+        changed = (await (await db.execute("SELECT changes()")).fetchone())[0]
         await db.commit()
-        return {"id": pid, "updated": True}
+        return {"id": pid, "updated": True} if changed else None
 
 
 async def delete_project(pid: str) -> dict:
