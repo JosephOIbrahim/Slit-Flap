@@ -271,6 +271,7 @@ def test_the_board_shows_when_backups_are_failing(owner, monkeypatch):
     monkeypatch.setattr(db, "backup_daily", disk_full)
     session = owner.get("/api/session").json()
     assert session["backupFailed"] is True
+    assert session["backupProblem"] == "failed"  # a disk problem, not damage to the board
     assert session["lastBackup"] == date.today().isoformat()  # still the newest good one
     assert "No space" not in str(session)  # the reason stays in the log
 
@@ -278,6 +279,7 @@ def test_the_board_shows_when_backups_are_failing(owner, monkeypatch):
     now[0] += server.BACKUP_RETRY_SECONDS
     session = owner.get("/api/session").json()
     assert session["backupFailed"] is False
+    assert session["backupProblem"] is None
     assert session["lastBackup"] == tomorrow.isoformat()
 
 
@@ -285,7 +287,8 @@ def test_viewers_are_not_told_about_backups(make_viewer):
     viewer, _ = make_viewer()
     session = viewer.get("/api/session").json()
     assert "startedAt" in session
-    assert "backupFailed" not in session and "lastBackup" not in session
+    assert "backupFailed" not in session and "backupProblem" not in session
+    assert "lastBackup" not in session
 
 
 def damage_the_board():
@@ -310,6 +313,7 @@ def test_a_damaged_board_is_reported_as_damaged(owner, monkeypatch, caplog):
 
     session = owner.get("/api/session").json()  # /api/session doesn't read the board
     assert session["backupFailed"] is True
+    assert session["backupProblem"] == "damaged"
     assert session["lastBackup"] == date.today().isoformat()
     assert f"departures-{tomorrow.isoformat()}.db" not in daily_backups()
     assert not list(db.backup_dir().glob("*.partial"))

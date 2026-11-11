@@ -37,7 +37,7 @@ export default function Departures() {
   const [animKey, setAnimKey] = useState(0);
   const [showRecap, setShowRecap] = useState(false);
   const [sessionMins, setSessionMins] = useState(0);
-  const [backup, setBackup] = useState({ failed: false, last: null });
+  const [backup, setBackup] = useState({ failed: false, problem: null, last: null });
   const [settings, setSettings] = useState({ zip: "", fontSize: "104", alignment: "left" });
   const [weather, setWeather] = useState(null);
   const [zipEditing, setZipEditing] = useState(false);
@@ -94,7 +94,7 @@ export default function Departures() {
   useEffect(() => {
     const fetchSession = () => api.get('/session').then(d => {
       setSessionMins(d.elapsedMinutes);
-      setBackup({ failed: !!d.backupFailed, last: d.lastBackup || null });
+      setBackup({ failed: !!d.backupFailed, problem: d.backupProblem || null, last: d.lastBackup || null });
     }).catch(() => {});
     fetchSession();
     const t = setInterval(fetchSession, 60000);
@@ -270,12 +270,16 @@ export default function Departures() {
             {backup.failed && (
               <div
                 role="status"
-                title={"Today's backup didn't work. Your board still saves as normal, and the backup is tried again every 30 minutes. "
-                  + (backup.last ? `Newest good backup: ${backup.last}. ` : "")
-                  + "The reason is in the board's window, or in launcher.log in the .departures folder."}
+                title={(backup.problem === "damaged"
+                  ? "Today's backup couldn't be verified, and the board itself may be damaged. New work may not be recoverable. "
+                    + (backup.last ? `Newest good backup: ${backup.last}. ` : "")
+                    + "Run: departures restore  (to see the backups)."
+                  : "Today's backup didn't work. Your board still saves as normal, and the backup is tried again every 30 minutes. "
+                    + (backup.last ? `Newest good backup: ${backup.last}. ` : "")
+                    + "The reason is in the board's window, or in launcher.log in the .departures folder.")}
                 style={sys("9px", RISK, { letterSpacing: "0.12em", marginTop: "4px", whiteSpace: "nowrap", cursor: "default" })}
               >
-                BACKUP FAILED
+                {backup.problem === "damaged" ? "BOARD MAY BE DAMAGED" : "BACKUP FAILED"}
               </div>
             )}
           </div>

@@ -40,6 +40,7 @@ class _Backups:
     running: bool = False    # one is in progress; other requests don't wait for it
     retry_at: float = 0.0    # after a failure, not tried again before this (_clock time)
     failed: bool = False     # the latest attempt failed (the board's header shows it)
+    problem: str | None = None  # "damaged" if the copy failed its check, else "failed"
 
 
 _backups = _Backups()
@@ -68,6 +69,7 @@ async def _daily_backup() -> None:
     except Exception as exc:  # a failed backup must never take the board down
         state.retry_at = _clock() + BACKUP_RETRY_SECONDS
         state.failed = True
+        state.problem = "damaged" if isinstance(exc, db.BackupCheckFailed) else "failed"
         if isinstance(exc, db.BackupCheckFailed):
             last = db.last_daily_backup()
             log.error("DEPARTURES daily backup failed, and the board itself may be damaged: %s. "
@@ -79,6 +81,7 @@ async def _daily_backup() -> None:
     else:
         state.day = today
         state.failed = False
+        state.problem = None
     finally:
         state.running = False
 
@@ -253,6 +256,7 @@ async def session(request: Request):
     if getattr(request.state, "role", None) == "owner":
         last = db.last_daily_backup()
         info["backupFailed"] = _backups.failed
+        info["backupProblem"] = _backups.problem
         info["lastBackup"] = last.stem.removeprefix("departures-") if last else None
     return info
 
