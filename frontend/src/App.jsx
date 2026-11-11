@@ -46,6 +46,7 @@ export default function Departures() {
   const [showShare, setShowShare] = useState(false);
   const [viewers, setViewers] = useState([]);
   const [newViewerEmail, setNewViewerEmail] = useState("");
+  const [clockWrong, setClockWrong] = useState(false);
   const [reloadNotice, setReloadNotice] = useState(false);
   const prevFilter = useRef(filter);
 
@@ -172,6 +173,7 @@ export default function Departures() {
     const fetchSession = () => api.get('/session').then(d => {
       setSessionMins(d.elapsedMinutes);
       setBackup({ failed: !!d.backupFailed, problem: d.backupProblem || null, last: d.lastBackup || null });
+      setClockWrong(!!d.clockWrong);
       if (startedAt.current && d.startedAt && d.startedAt !== startedAt.current) reloadBoard();
       if (d.startedAt) startedAt.current = d.startedAt;
     }).catch(() => {});
@@ -390,6 +392,15 @@ export default function Departures() {
                 style={sys("9px", RISK, { letterSpacing: "0.12em", marginTop: "4px", whiteSpace: "nowrap", cursor: "default" })}
               >
                 {backup.problem === "damaged" ? "BOARD MAY BE DAMAGED" : "BACKUP FAILED"}
+              </div>
+            )}
+            {clockWrong && (
+              <div
+                role="status"
+                title="The PC clock is behind the newest backup, so backups are kept separately and nothing is pruned until the clock is right. Set the clock forward to let old backups be cleaned up again."
+                style={sys("9px", RISK, { letterSpacing: "0.12em", marginTop: "4px", whiteSpace: "nowrap", cursor: "default" })}
+              >
+                PC CLOCK IS BEHIND · BACKUPS KEPT SEPARATELY
               </div>
             )}
           </div>
