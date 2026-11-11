@@ -5,6 +5,7 @@ import asyncio
 import sqlite3
 from contextlib import closing
 
+import pytest
 from click.testing import CliRunner
 
 from departures import db

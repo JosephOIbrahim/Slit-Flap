@@ -16,6 +16,14 @@ NEIGHBOR = ("192.168.1.77", 50000)  # someone else on the same Wi-Fi
 SECRET = "a file outside the frontend"
 
 
+@pytest.fixture(autouse=True)
+def no_real_board_probe(monkeypatch):
+    """Never knock on a real port: tests are green whether or not the owner's
+    board is running. Tests that need the check to say "yes" patch it again."""
+    from departures import cli as cli_module
+    monkeypatch.setattr(cli_module, "_board_already_running", lambda port: False)
+
+
 @pytest.fixture
 def board(tmp_path, monkeypatch):
     """A temporary data folder plus a fake built frontend.
