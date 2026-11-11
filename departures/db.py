@@ -375,7 +375,16 @@ def _fingerprint(path: Path) -> str | None:
 
 
 def _same_board(copy: Path, other: Path | None) -> bool:
+    """True when `copy` holds the same board as `other`. A copy that fails
+    SQLite's check counts as different, so a damaged newest backup never
+    stops the next one being made."""
     if other is None:
+        return False
+    try:
+        with closing(sqlite3.connect(other.resolve().as_uri() + "?immutable=1", uri=True)) as conn:
+            if conn.execute("PRAGMA quick_check").fetchone()[0] != "ok":
+                return False
+    except sqlite3.DatabaseError:
         return False
     mine = _fingerprint(copy)
     return mine is not None and mine == _fingerprint(other)

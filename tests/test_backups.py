@@ -105,6 +105,26 @@ def test_a_viewers_visit_does_not_count_as_a_change(board):
     assert daily_backups() == [f"departures-{date.today().isoformat()}.db"]
 
 
+def test_a_damaged_newest_copy_gets_a_fresh_one(board):
+    # Damage only in an index doesn't change what the rows say, so the
+    # fingerprint alone would call the board unchanged and skip forever.
+    start_board()
+    [newest] = db.backup_dir().glob("departures-????-??-??.db")
+    with closing(sqlite3.connect(newest)) as conn:
+        page = conn.execute("PRAGMA page_size").fetchone()[0]
+        root = conn.execute("SELECT rootpage FROM sqlite_master WHERE type='index'").fetchone()[0]
+    with open(newest, "r+b") as f:
+        f.seek((root - 1) * page)
+        f.write(bytes([0xFF]) * 16)
+    with closing(sqlite3.connect(newest)) as conn:
+        assert conn.execute("PRAGMA quick_check").fetchone()[0] != "ok"
+
+    made = db.backup_daily(date.today() + timedelta(days=1))
+    assert made is not None and made.exists()
+    with closing(sqlite3.connect(made)) as conn:
+        assert conn.execute("PRAGMA quick_check").fetchone()[0] == "ok"
+
+
 def test_keeps_the_newest_14_days(board):
     start_board()  # today's backup
     days_ago = [date.today() - timedelta(days=n) for n in range(40, 20, -1)]
