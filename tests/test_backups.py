@@ -641,6 +641,38 @@ def test_restore_keeps_the_wal_of_a_zero_byte_board(restore, tmp_path):
     assert kept_wal.read_bytes() == original_wal  # the changes are kept, not deleted
 
 
+def test_a_damaged_board_with_a_wal_is_kept_byte_for_byte(restore):
+    # Opening the live board with SQLite folds its -wal in and deletes it,
+    # so a raw copy taken after that isn't the board the restore started
+    # with. The kept files must be its own bytes, -wal included.
+    start_board()
+    backup = db.backup_dir() / daily_backups()[0]
+    crash_while_writing("INSERT INTO projects (id, name) VALUES ('wonly', 'WAL Only');")
+    wal = db.DB_PATH.with_name("departures.db-wal")
+    assert wal.stat().st_size > 0
+
+    # Damage a page the crash's changes never touched (the events table),
+    # so folding the -wal in doesn't heal it and the copy fails its check.
+    with closing(sqlite3.connect(backup)) as clean:
+        page = clean.execute("PRAGMA page_size").fetchone()[0]
+        events_root = clean.execute(
+            "SELECT rootpage FROM sqlite_master WHERE name = 'events'").fetchone()[0]
+    damaged = bytearray(db.DB_PATH.read_bytes())
+    start = (events_root - 1) * page
+    damaged[start:start + 16] = b"\xff" * 16
+    db.DB_PATH.write_bytes(bytes(damaged))
+
+    main_before = db.DB_PATH.read_bytes()
+    wal_before = wal.read_bytes()
+
+    result = restore(backup, "--yes")
+    assert result.exit_code == 0, result.output
+    [kept] = db.backup_dir().glob("*-before-restore.db")
+    assert kept.read_bytes() == main_before
+    [kept_wal] = db.backup_dir().glob("*-before-restore.db-wal")
+    assert kept_wal.read_bytes() == wal_before
+
+
 def test_a_restore_that_fails_at_the_swap_leaves_the_board_as_it_was(restore, monkeypatch):
     start_board()
     backup = db.backup_dir() / daily_backups()[0]

@@ -10,7 +10,7 @@ import sqlite3
 import tempfile
 import time
 import uuid
-from contextlib import asynccontextmanager, closing
+from contextlib import asynccontextmanager, closing, contextmanager
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -297,16 +297,48 @@ def _stamped(kind: str) -> Path:
     return dest
 
 
-def _snapshot(dest: Path, keep=None) -> Path | None:
-    """Copy the live database to dest: verified, self-contained, atomic.
+def restore_tmp_dir() -> Path:
+    """Where restore work files live: inside the data folder, never
+    %TEMP%, so a killed restore can't leave a full copy of the board in a
+    folder the owner doesn't know about."""
+    return DB_DIR / "restore-tmp"
 
-    With `keep`, the verified copy is first shown to keep(copy); if that
-    says no, it's thrown away and None is returned.
+
+@contextmanager
+def _private_board(path: Path):
+    """A private copy of a board file and its -wal/-journal, inside the data
+    folder. The board's own files are never opened by SQLite, which could
+    fold the -wal in and delete it. Cleaned up afterwards; a killed process
+    leaves it for the next restore to sweep."""
+    folder = restore_tmp_dir()
+    folder.mkdir(parents=True, exist_ok=True)
+    work = folder / f"board-{os.getpid()}-{secrets.token_hex(4)}"
+    work.mkdir()
+    try:
+        copy = work / path.name
+        shutil.copyfile(path, copy)
+        for suffix in ("-wal", "-journal"):
+            side = path.with_name(path.name + suffix)
+            if side.is_file():
+                shutil.copyfile(side, copy.with_name(copy.name + suffix))
+        yield copy
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def _snapshot(dest: Path, keep=None, source: Path | None = None) -> Path | None:
+    """Copy a database to dest: verified, self-contained, atomic.
+
+    `source` is the live board unless given (a private copy of it, so the
+    live files are never opened). With `keep`, the verified copy is first
+    shown to keep(copy); if that says no, it's thrown away and None is
+    returned.
 
     If another program keeps the board locked, SQLite's backup would wait
     forever (holding up startup, or the first request of the day). It gives
     up after BACKUP_TIME_LIMIT seconds instead and raises BackupTimeout.
     """
+    source = Path(source or DB_PATH)
     dest.parent.mkdir(parents=True, exist_ok=True)
     partial = dest.with_name(dest.name + ".partial")
     partial.unlink(missing_ok=True)
@@ -320,7 +352,7 @@ def _snapshot(dest: Path, keep=None) -> Path | None:
             raise BackupTimeout(f"the board stayed locked for {limit:g}s, so the backup was skipped")
 
     try:
-        with closing(sqlite3.connect(DB_PATH, timeout=min(1.0, limit))) as src, \
+        with closing(sqlite3.connect(source, timeout=min(1.0, limit))) as src, \
                 closing(sqlite3.connect(partial)) as out:
             try:
                 src.backup(out, progress=give_up_if_still_locked)
@@ -673,10 +705,14 @@ def _keep_board(kept: Path) -> list[Path]:
     empty_with_leftovers = (DB_PATH.exists() and DB_PATH.stat().st_size == 0
                             and any(side.exists() for side in _sidecars(DB_PATH)))
     if DB_PATH.exists() and not empty_with_leftovers:
-        try:
-            return [_snapshot(kept)]
-        except BackupCheckFailed:
-            pass  # damaged: keep its files exactly as they are
+        # The check runs on a private copy, never on the live files: opening
+        # those would fold the -wal in and delete it, so the raw copy below
+        # wouldn't be the board as it was when the restore started.
+        with _private_board(DB_PATH) as private:
+            try:
+                return [_snapshot(kept, source=private)]
+            except BackupCheckFailed:
+                pass  # damaged: keep its own files exactly as they are
     written: list[Path] = []
     try:
         for src in (DB_PATH, *_sidecars(DB_PATH)):
