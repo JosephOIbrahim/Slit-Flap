@@ -200,7 +200,10 @@ async def create_project(request: Request):
 @app.put("/api/projects/{pid}")
 async def update_project(pid: str, request: Request):
     body = await request.json()
-    updated = await db.update_project(pid, body)
+    try:
+        updated = await db.update_project(pid, body)
+    except db.StaleUpdate as exc:
+        return JSONResponse({"error": str(exc)}, status_code=409)
     if updated is None:
         return JSONResponse({"error": "No such project"}, status_code=404)
     return updated

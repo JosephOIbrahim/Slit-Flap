@@ -906,11 +906,45 @@ async def create_project(data: dict) -> dict:
         return {"id": pid}
 
 
+class StaleUpdate(RuntimeError):
+    """A save made from a page showing an older version of the project than
+    the board holds (the board changed since that page loaded it)."""
+
+
+def _stamp(value) -> datetime | None:
+    """Parse an ISO 8601 timestamp from the browser or the board, or None."""
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        moment = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
+
+
 async def update_project(pid: str, data: dict) -> dict | None:
     """Partial update from camelCase dict. Always touches updated_at and
     last_touched. None if no such project, so a save from a page left open
-    across a restore can't be reported as saved when nothing was written."""
+    across a restore can't be reported as saved when nothing was written.
+
+    A whole-project save carries the updatedAt the page loaded. If that's
+    older than the row now, the page is behind (another save, or a restore):
+    StaleUpdate, so its old values don't land over newer ones."""
     async with _db() as db:
+        await db.execute("BEGIN IMMEDIATE")  # the compare and the write see one board
+        cursor = await db.execute("SELECT updated_at FROM projects WHERE id = ?", (pid,))
+        row = await cursor.fetchone()
+        if row is None:
+            await db.rollback()
+            return None
+        sent, stored = _stamp(data.get("updatedAt")), _stamp(row["updated_at"])
+        if sent is not None and stored is not None and sent < stored:
+            await db.rollback()
+            raise StaleUpdate(
+                "This page is showing an older version of the project than the board "
+                "holds (it changed since the page loaded, for example after a restore). "
+                "Reload the board and make the change again."
+            )
         await PROJECTS.update(db, pid, data, touch=("updated_at", "last_touched"))
         changed = (await (await db.execute("SELECT changes()")).fetchone())[0]
         await db.commit()
