@@ -59,7 +59,7 @@ def test_only_one_backup_per_day(board, monkeypatch):
     first = db.backup_dir() / daily_backups()[0]
     stamp = first.stat().st_mtime_ns
 
-    monkeypatch.setattr(server, "_backup_day", None)  # a restart, same day
+    monkeypatch.setattr(server, "_backups", server._Backups())  # a restart, same day
     start_board()
     assert len(daily_backups()) == 1
     assert first.stat().st_mtime_ns == stamp  # the morning copy is never overwritten
@@ -178,9 +178,39 @@ def test_a_failed_backup_never_stops_the_board(board, monkeypatch, caplog):
 
     monkeypatch.setattr(db, "backup_daily", broken)
     start_board()  # first start creates the board
-    monkeypatch.setattr(server, "_backup_day", None)
+    monkeypatch.setattr(server, "_backups", server._Backups())
     start_board()  # second start: backup fails, board still answers
     assert "daily backup failed" in caplog.text
+
+
+def test_a_failed_backup_is_tried_again_half_an_hour_later(owner, monkeypatch):
+    owner.get("/api/projects")  # today's backup
+    owner.post("/api/projects", json={"name": "Worked On Today"})
+    tomorrow = date.today() + timedelta(days=1)
+    monkeypatch.setattr(server, "_today", lambda: tomorrow)
+    now = [1000.0]
+    monkeypatch.setattr(server, "_clock", lambda: now[0])
+
+    real_backup, attempts = db.backup_daily, []
+
+    def disk_full_the_first_time(day):
+        attempts.append(day)
+        if len(attempts) == 1:
+            raise OSError(28, "No space left on device")
+        return real_backup(day)
+
+    monkeypatch.setattr(db, "backup_daily", disk_full_the_first_time)
+    owner.get("/api/projects")  # the day's backup fails
+    now[0] += server.BACKUP_RETRY_SECONDS - 1
+    owner.get("/api/projects")  # too soon to try again
+    assert len(attempts) == 1
+
+    now[0] += 1
+    owner.get("/api/projects")  # tried again, and this time it works
+    assert len(attempts) == 2
+    assert f"departures-{tomorrow.isoformat()}.db" in daily_backups()
+    owner.get("/api/projects")  # and then it's done for the day
+    assert len(attempts) == 2
 
 
 # ── A locked board can't hold anything up ───────────────────────
@@ -254,7 +284,7 @@ def test_a_locked_board_cannot_hang_the_first_request_of_the_day(owner, monkeypa
 
 def test_startup_with_a_locked_board_skips_the_backup_and_carries_on(board, monkeypatch, caplog):
     start_board()  # a board exists
-    monkeypatch.setattr(server, "_backup_day", None)  # a restart...
+    monkeypatch.setattr(server, "_backups", server._Backups())  # a restart...
     monkeypatch.setattr(server, "_today", lambda: date.today() + timedelta(days=1))  # ...on a new day
     monkeypatch.setattr(db, "BACKUP_TIME_LIMIT", 0.5)
 

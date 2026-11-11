@@ -5,7 +5,9 @@ import logging
 import math
 import os
 import re
+import time
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
@@ -28,25 +30,48 @@ _session_started_at: str = ""
 # ── Daily backup ──────────────────────────────────────────────────
 
 log = logging.getLogger("uvicorn.error")
-_backup_day: date | None = None
+BACKUP_RETRY_SECONDS = 30 * 60  # after a failed daily backup, try again this much later
+
+
+@dataclass
+class _Backups:
+    """Where the daily backup stands in this server process."""
+    day: date | None = None  # the day whose backup is done
+    running: bool = False    # one is in progress; other requests don't wait for it
+    retry_at: float = 0.0    # after a failure, not tried again before this (_clock time)
+
+
+_backups = _Backups()
 
 
 def _today() -> date:
     return date.today()
 
 
+def _clock() -> float:
+    return time.monotonic()
+
+
 async def _daily_backup() -> None:
     """Snapshot the board on the first start or request of each local day
-    (the server can stay up for days, so startup alone isn't enough)."""
-    global _backup_day
-    today = _today()
-    if _backup_day == today or not db.DB_PATH.exists():
+    (the server can stay up for days, so startup alone isn't enough). A
+    backup that fails is tried again BACKUP_RETRY_SECONDS later."""
+    state, today = _backups, _today()
+    if state.day == today or state.running or _clock() < state.retry_at:
         return
-    _backup_day = today  # claim the day first, so concurrent requests skip
+    if not db.DB_PATH.exists():
+        return
+    state.running = True
     try:
         await asyncio.to_thread(db.backup_daily, today)
     except Exception as exc:  # a failed backup must never take the board down
-        log.warning("DEPARTURES daily backup failed: %s", exc)
+        state.retry_at = _clock() + BACKUP_RETRY_SECONDS
+        log.warning("DEPARTURES daily backup failed (trying again in %d minutes): %s",
+                    BACKUP_RETRY_SECONDS // 60, exc)
+    else:
+        state.day = today
+    finally:
+        state.running = False
 
 
 # ── Lifespan ──────────────────────────────────────────────────────
