@@ -33,6 +33,19 @@ def test_recap_is_the_local_day_even_after_utc_midnight(board, monkeypatch):
     assert recap["logEntries"] == 1
 
 
+def test_recap_bounds_resolve_each_midnight_on_a_dst_fallback_day(board, monkeypatch):
+    # 8pm after the November fall-back carries the day's current -05 offset.
+    # The day still began at midnight under -04, so its UTC window is 25 hours.
+    eastern = timezone(timedelta(hours=-5))
+    monkeypatch.setattr(db, "_local_now", lambda: datetime(2027, 11, 7, 20, 0, tzinfo=eastern))
+
+    day, start, end = db._local_day_bounds()
+
+    assert day == "2027-11-07"
+    assert start == "2027-11-07T04:00:00+00:00"
+    assert end == "2027-11-08T05:00:00+00:00"
+
+
 def test_recap_leaves_out_the_next_local_day(board, monkeypatch):
     tz = timezone(timedelta(hours=-5))
     monkeypatch.setattr(db, "_local_now", lambda: datetime(2027, 1, 15, 20, 0, tzinfo=tz))

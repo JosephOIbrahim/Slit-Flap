@@ -37,9 +37,12 @@ def _local_day_bounds(now: datetime | None = None) -> tuple[str, str, str]:
     Timestamps are stored in UTC, so a local day has to be expressed as a
     UTC window: 7-8pm Eastern is already tomorrow in UTC."""
     now = (now or _local_now()).astimezone()
-    start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    end = start + timedelta(days=1)
-    return (start.date().isoformat(),
+    day = now.date()
+    # Each midnight needs its own UTC conversion: on a DST transition day the
+    # offset at the end isn't necessarily the offset the day started with.
+    start = datetime.combine(day, datetime.min.time()).astimezone()
+    end = datetime.combine(day + timedelta(days=1), datetime.min.time()).astimezone()
+    return (day.isoformat(),
             start.astimezone(timezone.utc).isoformat(),
             end.astimezone(timezone.utc).isoformat())
 
