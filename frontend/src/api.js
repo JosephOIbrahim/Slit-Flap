@@ -38,16 +38,16 @@ const isRetryable = (err) => !err.status || err.status >= 500;
 
 const isProjectFieldPatch = (method, path) => method === "PUT" && /^\/projects\/[^/]+$/.test(path);
 
-const remember = (method, path, body) => {
+const remember = (method, path, body, generation) => {
   // Project PUTs are field patches, so two offline edits must be combined.
   // Full-document writes (notes, settings, event rows) still replace the
   // earlier body: replaying an old document over a newer one would undo it.
-  const key = method === "PUT" ? `PUT ${path}` : `${method} ${path} #${++state.seq}`;
+  const key = method === "PUT" ? `PUT ${path}` : `${method} ${path} #${generation}`;
   const previous = state.queue.get(key);
   const queuedBody = previous && isProjectFieldPatch(method, path)
     ? { ...previous.body, ...body }
     : body;
-  state.queue.set(key, { key, method, path, body: queuedBody });
+  state.queue.set(key, { key, method, path, body: queuedBody, generation });
   notify();
 };
 
@@ -81,12 +81,17 @@ const request = async (method, path, body) => {
 
 const send = (method) => async (path, body) => {
   const key = method === "PUT" ? `PUT ${path}` : null;
+  const generation = ++state.seq;
   try {
     const data = await request(method, path, body);
-    if (key && state.queue.delete(key)) notify();  // a newer save got through
+    const queued = key && state.queue.get(key);
+    if (queued && queued.generation === generation) {
+      state.queue.delete(key);
+      notify();
+    }
     return data;
   } catch (err) {
-    if (isRetryable(err)) remember(method, path, body);
+    if (isRetryable(err)) remember(method, path, body, generation);
     throw err;
   }
 };
@@ -98,9 +103,12 @@ export async function flushSaveQueue() {
   for (const [key, item] of [...state.queue]) {
     try {
       await request(item.method, item.path, item.body);
-      state.queue.delete(key);
+      if (state.queue.get(key)?.generation === item.generation) state.queue.delete(key);
     } catch (err) {
-      if (!isRetryable(err)) state.queue.delete(key);  // 4xx: retrying can't help
+      // A 4xx cannot help this generation, but a newer queued write survives.
+      if (!isRetryable(err) && state.queue.get(key)?.generation === item.generation) {
+        state.queue.delete(key);
+      }
     }
   }
   notify();

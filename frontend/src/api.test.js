@@ -126,6 +126,49 @@ test("queued notes writes still replace the whole document", async () => {
   assert.deepEqual(JSON.parse(sent.body), { content: "second" });
 });
 
+test("an older PUT success does not delete a newer queued write", async () => {
+  _resetSaveState();
+  const realFetch = global.fetch;
+  let finishFirst;
+  global.fetch = async (url, options) => {
+    const body = JSON.parse(options.body);
+    if (body.name === "first") {
+      return new Promise((resolve) => { finishFirst = () => resolve(reply(200, {})); });
+    }
+    throw new TypeError("offline");
+  };
+  try {
+    const first = api.put("/projects/p", { name: "first" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await assert.rejects(api.put("/projects/p", { next: "newer offline edit" }));
+    assert.equal(saveState.status().pending, 1);
+    finishFirst();
+    await first;
+    assert.equal(saveState.status().pending, 1);
+  } finally {
+    global.fetch = realFetch;
+  }
+});
+
+test("a successful PUT clears only its own queued generation", async () => {
+  _resetSaveState();
+  const realFetch = global.fetch;
+  let offline = true;
+  global.fetch = async () => {
+    if (offline) throw new TypeError("offline");
+    return reply(200, {});
+  };
+  try {
+    await assert.rejects(api.put("/projects/p", { name: "offline" }));
+    assert.equal(saveState.status().pending, 1);
+    offline = false;
+    await flushSaveQueue();
+    assert.equal(saveState.status().pending, 0);
+  } finally {
+    global.fetch = realFetch;
+  }
+});
+
 test("writes carry the board header", async () => {
   _resetSaveState();
   const realFetch = global.fetch;
