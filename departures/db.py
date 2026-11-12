@@ -11,7 +11,7 @@ import tempfile
 import time
 import uuid
 from contextlib import asynccontextmanager, closing, contextmanager
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import aiosqlite
@@ -25,6 +25,24 @@ log = logging.getLogger("uvicorn.error")  # the board's own terminal (and launch
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _local_now() -> datetime:
+    """The owner's clock, with its timezone. Tests patch this."""
+    return datetime.now().astimezone()
+
+
+def _local_day_bounds(now: datetime | None = None) -> tuple[str, str, str]:
+    """(local date, its first instant in UTC, the next day's first instant).
+
+    Timestamps are stored in UTC, so a local day has to be expressed as a
+    UTC window: 7-8pm Eastern is already tomorrow in UTC."""
+    now = (now or _local_now()).astimezone()
+    start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    end = start + timedelta(days=1)
+    return (start.date().isoformat(),
+            start.astimezone(timezone.utc).isoformat(),
+            end.astimezone(timezone.utc).isoformat())
 
 
 def _new_id() -> str:
@@ -1219,19 +1237,22 @@ async def update_notes(pid: str, content: str, base_updated_at: str | None = Non
 # ── Recap ─────────────────────────────────────────────────────────
 
 async def get_recap() -> dict:
-    """Today's touched projects and log count."""
-    today_str = datetime.now(timezone.utc).date().isoformat()
+    """Today's touched projects and log count, on the owner's local day.
+    Timestamps are UTC, so the day is a UTC window, not a UTC date."""
+    today_str, start_utc, end_utc = _local_day_bounds()
     async with _db() as db:
         cursor = await db.execute(
-            "SELECT id, name, status FROM projects WHERE last_touched LIKE ? || '%'",
-            (today_str,),
+            "SELECT id, name, status FROM projects "
+            "WHERE julianday(last_touched) >= julianday(?) AND julianday(last_touched) < julianday(?)",
+            (start_utc, end_utc),
         )
         touched = await cursor.fetchall()
         projects = [{"id": r["id"], "name": r["name"], "status": r["status"]} for r in touched]
 
         log_cursor = await db.execute(
-            "SELECT COUNT(*) FROM logs WHERE created_at LIKE ? || '%'",
-            (today_str,),
+            "SELECT COUNT(*) FROM logs "
+            "WHERE julianday(created_at) >= julianday(?) AND julianday(created_at) < julianday(?)",
+            (start_utc, end_utc),
         )
         log_row = await log_cursor.fetchone()
 
