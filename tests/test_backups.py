@@ -810,8 +810,9 @@ def test_restore_takes_a_board_from_before_sort_order(restore, tmp_path):
     start_board()
     older = tmp_path / "from-an-older-version.db"
     shutil.copyfile(db.backup_dir() / daily_backups()[0], older)
-    with closing(sqlite3.connect(older)) as conn:
+    with closing(sqlite3.connect(older)) as conn:  # a board from before the migration
         conn.execute("ALTER TABLE projects DROP COLUMN sort_order")
+        conn.execute("PRAGMA user_version = 0")
         conn.commit()
 
     result = restore(older, "--yes")

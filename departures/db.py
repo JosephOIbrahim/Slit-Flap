@@ -887,29 +887,58 @@ def install_restore(staged: Path) -> list[Path]:
 
 # ── Init + seed ───────────────────────────────────────────────────
 
+# ── Migrations ────────────────────────────────────────────────────
+#
+# The database records its schema version in PRAGMA user_version. Each
+# step below runs once, in order, inside its own transaction: a step that
+# fails rolls back and leaves the version where it was, so the next start
+# tries it again. Add new steps at the end with the next number; never
+# edit a step that has shipped.
+
+async def _add_sort_order(db) -> None:
+    """Give projects a unique sort_order, in the order the board shows them."""
+    cols = {row[1] for row in await (await db.execute("PRAGMA table_info(projects)")).fetchall()}
+    if "sort_order" not in cols:
+        await db.execute("ALTER TABLE projects ADD COLUMN sort_order INTEGER DEFAULT 0")
+        order = "track, name"
+    else:
+        counts = await (await db.execute(
+            "SELECT COUNT(DISTINCT sort_order) AS distinct_orders, COUNT(*) AS total FROM projects"
+        )).fetchone()
+        if counts["distinct_orders"] == counts["total"]:
+            return  # already unique
+        order = "sort_order, track, name"
+    rows = await (await db.execute(f"SELECT id FROM projects ORDER BY {order}")).fetchall()
+    for i, row in enumerate(rows):
+        await db.execute("UPDATE projects SET sort_order = ? WHERE id = ?", (i, row["id"]))
+
+
+_MIGRATIONS = [
+    (1, "projects.sort_order", _add_sort_order),
+]
+SCHEMA_VERSION = _MIGRATIONS[-1][0]
+
+
+async def _migrate(db) -> None:
+    current = (await (await db.execute("PRAGMA user_version")).fetchone())[0]
+    for version, name, step in _MIGRATIONS:
+        if version <= current:
+            continue
+        await db.execute("BEGIN IMMEDIATE")
+        try:
+            await step(db)
+            await db.execute(f"PRAGMA user_version = {version}")
+            await db.commit()
+        except BaseException:
+            await db.rollback()
+            raise
+
+
 async def init_db() -> None:
-    """Create tables, run migrations, and seed if empty."""
+    """Create tables, bring the schema up to date, and seed if empty."""
     async with _db() as db:
         await db.executescript(_SCHEMA)
-        # Migration: add sort_order column if missing (existing DBs)
-        try:
-            await db.execute("ALTER TABLE projects ADD COLUMN sort_order INTEGER DEFAULT 0")
-            await db.commit()
-            cursor = await db.execute("SELECT id FROM projects ORDER BY track, name")
-            rows = await cursor.fetchall()
-            for i, row in enumerate(rows):
-                await db.execute("UPDATE projects SET sort_order = ? WHERE id = ?", (i, row["id"]))
-            await db.commit()
-        except Exception:
-            # Column already exists — ensure sort_orders are unique
-            cursor = await db.execute("SELECT COUNT(DISTINCT sort_order) as cnt, COUNT(*) as total FROM projects")
-            row = await cursor.fetchone()
-            if row["cnt"] < row["total"]:
-                cursor2 = await db.execute("SELECT id FROM projects ORDER BY sort_order, track, name")
-                rows2 = await cursor2.fetchall()
-                for i, r in enumerate(rows2):
-                    await db.execute("UPDATE projects SET sort_order = ? WHERE id = ?", (i, r["id"]))
-                await db.commit()
+        await _migrate(db)
 
         cursor = await db.execute("SELECT COUNT(*) FROM projects")
         row = await cursor.fetchone()

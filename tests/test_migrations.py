@@ -1,0 +1,80 @@
+"""Schema migrations: recorded in PRAGMA user_version, run once, in order,
+and a failed step changes nothing."""
+
+import asyncio
+import sqlite3
+from contextlib import closing
+
+import pytest
+
+from departures import db
+
+
+def version(path=None):
+    with closing(sqlite3.connect(path or db.DB_PATH)) as conn:
+        return conn.execute("PRAGMA user_version").fetchone()[0]
+
+
+def sort_orders(path=None):
+    with closing(sqlite3.connect(path or db.DB_PATH)) as conn:
+        return [row[0] for row in conn.execute("SELECT sort_order FROM projects ORDER BY sort_order")]
+
+
+def test_a_fresh_board_records_the_latest_version(board):
+    asyncio.run(db.init_db())
+    assert version() == db.SCHEMA_VERSION
+    orders = sort_orders()
+    assert len(orders) == 16 and orders == list(range(16))  # unique, in board order
+
+
+def test_a_legacy_board_gains_sort_order(board):
+    # A board from before sort_order existed, and from before user_version
+    # was used to track the schema.
+    db.DB_DIR.mkdir(parents=True, exist_ok=True)
+    with closing(sqlite3.connect(db.DB_PATH)) as conn:
+        conn.execute("CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, track TEXT)")
+        conn.executemany("INSERT INTO projects (id, name, track) VALUES (?, ?, ?)",
+                         [("b", "B", "02"), ("a", "A", "01"), ("c", "C", "01")])
+        conn.commit()
+    assert version() == 0
+
+    asyncio.run(db.init_db())
+    assert version() == db.SCHEMA_VERSION
+    with closing(sqlite3.connect(db.DB_PATH)) as conn:
+        rows = conn.execute("SELECT id, sort_order FROM projects ORDER BY sort_order").fetchall()
+    assert rows == [("a", 0), ("c", 1), ("b", 2)]  # track, then name
+
+
+def test_duplicate_sort_orders_are_repaired_once(board):
+    asyncio.run(db.init_db())
+    with closing(sqlite3.connect(db.DB_PATH)) as conn:  # a board that drifted before the migration
+        conn.execute("UPDATE projects SET sort_order = 0")
+        conn.execute("PRAGMA user_version = 0")
+        conn.commit()
+
+    asyncio.run(db.init_db())
+    assert sort_orders() == list(range(16))
+
+
+def test_a_migration_does_not_run_twice(board, monkeypatch):
+    asyncio.run(db.init_db())
+
+    async def boom(conn):
+        raise AssertionError("migration 1 ran again")
+    monkeypatch.setattr(db, "_MIGRATIONS", [(1, "boom", boom)])
+    asyncio.run(db.init_db())  # version is already 1: nothing runs
+
+
+def test_a_failed_migration_changes_nothing(board, monkeypatch):
+    async def half_done(conn):
+        await conn.execute("ALTER TABLE projects ADD COLUMN half_added TEXT")
+        raise RuntimeError("interrupted")
+
+    monkeypatch.setattr(db, "_MIGRATIONS", [(1, "half", half_done)])
+    with pytest.raises(RuntimeError):
+        asyncio.run(db.init_db())
+
+    assert version() == 0
+    with closing(sqlite3.connect(db.DB_PATH)) as conn:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(projects)")}
+    assert "half_added" not in cols
