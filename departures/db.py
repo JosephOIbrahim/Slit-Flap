@@ -701,17 +701,24 @@ class RestoreError(Exception):
     """A restore didn't happen. The message says what, if anything, changed."""
 
 
-# The columns the board reads. A table that's missing is created when the
-# board starts; one that's there must have these (projects.sort_order is
-# also added at start, so boards from before it still restore).
+# The columns present before migrations. A table that's missing is created
+# when the board starts; one that's there must have the columns its recorded
+# user_version requires, while later migrations may still add their columns.
 _BOARD_COLUMNS = {
-    "projects": set(PROJECTS.cols) - {"sort_order"},
+    "projects": set(PROJECTS.cols) - {"sort_order", "today_date", "archived_at"},
     "logs": {"id", "project_id", "text", "created_at"},
     "notes": {"project_id", "content", "updated_at"},
-    "events": set(EVENTS.cols),
+    "events": set(EVENTS.cols) - {"date"},
     "settings": {"key", "value"},
     "viewers": {"id", "email", "token", "created_at", "last_seen"},
 }
+_MIGRATED_BOARD_COLUMNS = (
+    (1, "projects", {"sort_order"}),
+    (2, "projects", {"today_date"}),
+    (3, "events", {"date"}),
+    (4, "projects", {"archived_at"}),
+    (6, "sessions", {"projects_touched", "summary"}),
+)
 
 
 def _not_a_board(conn: sqlite3.Connection) -> str | None:
@@ -719,7 +726,12 @@ def _not_a_board(conn: sqlite3.Connection) -> str | None:
     tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
     if "projects" not in tables:
         return "it has no projects table"
-    for table, needed in _BOARD_COLUMNS.items():
+    version = conn.execute("PRAGMA user_version").fetchone()[0]
+    required = {table: set(columns) for table, columns in _BOARD_COLUMNS.items()}
+    for migrated, table, columns in _MIGRATED_BOARD_COLUMNS:
+        if version >= migrated:
+            required.setdefault(table, set()).update(columns)
+    for table, needed in required.items():
         if table in tables:
             have = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
             if missing := needed - have:

@@ -820,6 +820,38 @@ def test_restore_takes_a_board_from_before_sort_order(restore, tmp_path):
     start_board()  # the board adds the column back and runs on it
 
 
+def test_restore_accepts_a_legacy_backup_and_migrates_it(board, tmp_path):
+    asyncio.run(db.init_db())
+    backup = db.backup_daily(date.today())
+    legacy = tmp_path / "legacy-board.db"
+    shutil.copyfile(backup, legacy)
+    with closing(sqlite3.connect(legacy)) as conn:
+        conn.execute("ALTER TABLE projects DROP COLUMN today_date")
+        conn.execute("ALTER TABLE projects DROP COLUMN archived_at")
+        conn.execute("ALTER TABLE events DROP COLUMN date")
+        conn.execute("ALTER TABLE sessions DROP COLUMN projects_touched")
+        conn.execute("ALTER TABLE sessions DROP COLUMN summary")
+        conn.execute("DROP TABLE transitions")
+        conn.execute("PRAGMA user_version = 1")
+        conn.commit()
+
+    staged, _ = db.stage_restore(legacy)
+    db.install_restore(staged)
+    asyncio.run(db.init_db())
+
+    with closing(sqlite3.connect(db.DB_PATH)) as conn:
+        version = conn.execute("PRAGMA user_version").fetchone()[0]
+        project_cols = {row[1] for row in conn.execute("PRAGMA table_info(projects)")}
+        event_cols = {row[1] for row in conn.execute("PRAGMA table_info(events)")}
+        session_cols = {row[1] for row in conn.execute("PRAGMA table_info(sessions)")}
+        tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    assert version == db.SCHEMA_VERSION == 6
+    assert {"today_date", "archived_at"} <= project_cols
+    assert "date" in event_cols
+    assert {"projects_touched", "summary"} <= session_cols
+    assert "transitions" in tables
+
+
 def test_restore_checks_the_port_the_board_was_started_on(restore, monkeypatch):
     start_board()
     backup = db.backup_dir() / daily_backups()[0]
