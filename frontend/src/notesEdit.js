@@ -44,4 +44,3 @@ export function createNotesSaveQueue({ getDraft, getNote, putNote, onVersion, on
 
   return { save, idle: () => chain };
 }
-
