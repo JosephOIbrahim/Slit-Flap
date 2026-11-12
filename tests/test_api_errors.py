@@ -26,6 +26,31 @@ def test_unknown_project_writes_change_nothing(owner):
     assert "ghost" not in ids
 
 
+def test_duplicate_project_id_is_a_409_and_preserves_the_project(owner):
+    assert owner.post("/api/projects", json={"id": "same", "name": "Original"}).status_code == 200
+
+    duplicate = owner.post("/api/projects", json={"id": "same", "name": "Duplicate"})
+
+    assert duplicate.status_code == 409
+    assert "already exists" in duplicate.text
+    current = next(p for p in owner.get("/api/projects").json() if p["id"] == "same")
+    assert current["name"] == "Original"
+
+
+@pytest.mark.parametrize("method,path,body", [
+    ("post", "/api/projects", {"id": "bad-create", "name": None}),
+    ("put", "/api/projects/p", {"name": None}),
+    ("put", "/api/projects/p/notes", {"content": {"not": "text"}}),
+])
+def test_null_or_object_field_values_are_a_422(owner, method, path, body):
+    owner.post("/api/projects", json={"id": "p", "name": "Valid"})
+
+    response = getattr(owner, method)(path, json=body)
+
+    assert response.status_code == 422
+    assert owner.get("/api/projects/p/notes").json()["content"] == ""
+
+
 def test_unknown_viewer_is_a_404(owner):
     response = owner.delete("/api/viewers/ghost")
     assert response.status_code == 404

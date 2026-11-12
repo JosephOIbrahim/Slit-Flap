@@ -326,6 +326,31 @@ async def _json_object(request: Request) -> dict:
     return body
 
 
+def _require_string_fields(body: dict, fields: tuple[str, ...], nullable=()) -> None:
+    """Reject values SQLite cannot bind, before they become a 500."""
+    for field in fields:
+        if field not in body:
+            continue
+        value = body[field]
+        if value is None and field in nullable:
+            continue
+        if not isinstance(value, str):
+            raise HTTPException(status_code=422, detail=f"{field} must be a string")
+
+
+_PROJECT_STRING_FIELDS = (
+    "id", "name", "status", "track", "domain", "next", "deadline", "bgColor",
+    "todayTime", "todayDate", "archivedAt", "lastTouched", "createdAt", "updatedAt",
+)
+
+
+def _validate_project_fields(body: dict) -> None:
+    _require_string_fields(body, _PROJECT_STRING_FIELDS)
+    for field in ("mile", "of", "sortOrder"):
+        if field in body and type(body[field]) is not int:
+            raise HTTPException(status_code=422, detail=f"{field} must be an integer")
+
+
 async def _require_project(pid: str) -> None:
     """404 for a project id the board doesn't have, before writing anything."""
     if not await db.project_exists(pid):
@@ -349,7 +374,11 @@ async def list_projects(request: Request):
 @app.post("/api/projects", dependencies=[Depends(require_owner)])
 async def create_project(request: Request):
     body = await _json_object(request)
-    return await db.create_project(body)
+    _validate_project_fields(body)
+    try:
+        return await db.create_project(body)
+    except db.DuplicateProject:
+        return JSONResponse({"error": "A project with this id already exists"}, status_code=409)
 
 
 @app.put("/api/projects/order", dependencies=[Depends(require_owner)])
@@ -364,6 +393,7 @@ async def reorder_projects(request: Request):
 @app.put("/api/projects/{pid}", dependencies=[Depends(require_owner)])
 async def update_project(pid: str, request: Request):
     body = await _json_object(request)
+    _validate_project_fields(body)
     try:
         updated = await db.update_project(pid, body)
     except db.StaleUpdate as exc:
@@ -416,6 +446,8 @@ async def get_notes(pid: str):
 @app.put("/api/projects/{pid}/notes", dependencies=[Depends(require_owner)])
 async def update_notes(pid: str, request: Request):
     body = await _json_object(request)
+    _require_string_fields(body, ("content",))
+    _require_string_fields(body, ("updatedAt",), nullable=("updatedAt",))
     await _require_project(pid)
     content = body.get("content", "")
     updated = await db.update_notes(pid, content, body.get("updatedAt"))

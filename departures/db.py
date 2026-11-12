@@ -1168,6 +1168,10 @@ async def project_exists(pid: str) -> bool:
         return row is not None
 
 
+class DuplicateProject(RuntimeError):
+    """A project with the requested id already exists."""
+
+
 async def create_project(data: dict) -> dict:
     """Create a project from camelCase frontend data. Returns {id}."""
     now = _now()
@@ -1176,24 +1180,30 @@ async def create_project(data: dict) -> dict:
         await db.execute("BEGIN IMMEDIATE")
         row = await (await db.execute(
             "SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order FROM projects")).fetchone()
-        await PROJECTS.insert(db, {
-            "id": pid,
-            "name": data.get("name", "New Project"),
-            "status": data.get("status", "QUEUED"),
-            "track": data.get("track", "03"),
-            "domain": data.get("domain", "AI"),
-            "next_action": data.get("next", ""),
-            "deadline": data.get("deadline", ""),
-            "bg_color": data.get("bgColor", ""),
-            "mile": data.get("mile", 0),
-            "mile_total": data.get("of", 0),
-            "today_time": data.get("todayTime", ""),
-            "today_date": data.get("todayDate", ""),
-            "sort_order": data.get("sortOrder", row["next_order"]),
-            "last_touched": now,
-            "created_at": now,
-            "updated_at": now,
-        })
+        try:
+            await PROJECTS.insert(db, {
+                "id": pid,
+                "name": data.get("name", "New Project"),
+                "status": data.get("status", "QUEUED"),
+                "track": data.get("track", "03"),
+                "domain": data.get("domain", "AI"),
+                "next_action": data.get("next", ""),
+                "deadline": data.get("deadline", ""),
+                "bg_color": data.get("bgColor", ""),
+                "mile": data.get("mile", 0),
+                "mile_total": data.get("of", 0),
+                "today_time": data.get("todayTime", ""),
+                "today_date": data.get("todayDate", ""),
+                "sort_order": data.get("sortOrder", row["next_order"]),
+                "last_touched": now,
+                "created_at": now,
+                "updated_at": now,
+            })
+        except sqlite3.IntegrityError as exc:
+            await db.rollback()
+            if "projects.id" in str(exc):
+                raise DuplicateProject from exc
+            raise
         await db.commit()
         return {"id": pid}
 
