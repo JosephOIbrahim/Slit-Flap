@@ -100,6 +100,22 @@ def test_a_block_from_before_the_date_column_keeps_its_day(board):
     assert got == date.today().isoformat()
 
 
+def test_a_legacy_board_gains_archived_at_before_project_listings(board):
+    asyncio.run(db.init_db())
+    with closing(sqlite3.connect(db.DB_PATH)) as conn:
+        conn.execute("ALTER TABLE projects DROP COLUMN archived_at")
+        conn.execute("PRAGMA user_version = 3")
+        conn.commit()
+
+    asyncio.run(db.init_db())
+
+    active = asyncio.run(db.list_projects())
+    archived = asyncio.run(db.list_projects(archived=True))
+    assert len(active) == 16
+    assert archived == []
+    assert version() == db.SCHEMA_VERSION
+
+
 def test_events_are_dated_and_old_ones_keep_their_day(board):
     from datetime import date
 
