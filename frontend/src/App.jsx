@@ -12,10 +12,10 @@ import { useState, useEffect, useRef } from "react";
 // truth for theme + API access.
 // ─────────────────────────────────────────────────────────────
 
-import { ACCENT, WHITE, BG, RISK, DISPLAY, MONO, G1, G2, G3, G4, G5, G6, sys, FONT_SIZES } from "./theme";
+import { ACCENT, WHITE, WHISPER, BG, RED, RISK, DISPLAY, MONO, G2, G3, G4, G5, G6, sys, whisper, sentence, FONT_SIZES } from "./theme";
 import { api, saveState, startSaveQueue } from "./api";
 import { changedFields } from "./projectFields";
-import { scoreProject, sessionColor, formatDuration, timeToMinutes, fetchWeather, localDate, nextHalfHour, FILTERS } from "./utils";
+import { sessionColor, formatDuration, timeToMinutes, fetchWeather, localDate, nextHalfHour, FILTERS, nextUpProject, startHereText, filterCounts, visibleProjects } from "./utils";
 import { ProjectCard } from "./components/ProjectCard";
 import { EventRow, EmailRow, NowLine, SectionLabel } from "./components/Rows";
 import { RecapPanel, SharePanel } from "./components/Modals";
@@ -95,9 +95,11 @@ export default function Departures() {
     api.get('/projects').catch(() => null),
     api.get('/events').catch(() => null),
     api.get('/settings').catch(() => null),
-  ]).then(([p, e, s]) => {
+    api.get('/projects?archived=1').catch(() => null),
+  ]).then(([p, e, s, a]) => {
     if (p) setProjects(p);
     if (e) setEvents(e);
+    if (a) setArchivedProjects(a);
     if (s) {
       setSettings(s);
       setZipDraft(s.zip || "");
@@ -139,7 +141,7 @@ export default function Departures() {
     const s = document.createElement("style");
     s.textContent = `
       body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
-      *:focus-visible { outline: 1px solid ${ACCENT}; outline-offset: 2px; }
+      *:focus-visible { outline: 1px solid ${WHITE}; outline-offset: 2px; }
       *:focus:not(:focus-visible) { outline: none; }
       ::-webkit-scrollbar { width: 6px; }
       ::-webkit-scrollbar-track { background: transparent; }
@@ -155,6 +157,7 @@ export default function Departures() {
   // ─── Initial loads ─────────────────────────────────────────
   useEffect(() => {
     api.get('/projects').then(data => { setProjects(data); setReady(true); }).catch(() => setReady(true));
+    api.get('/projects?archived=1').then(setArchivedProjects).catch(() => {});
     api.get('/events').then(setEvents).catch(() => {});
     api.get('/settings').then(s => {
       setSettings(s);
@@ -349,11 +352,8 @@ export default function Departures() {
 
   // Standard filters
   const today = localDate();
-  const filtered = isToday
-    ? projects.filter((p) => p.status !== "SHIPPED" && p.todayTime && p.todayDate === today)
-    : filter === "ARCHIVED"
-      ? archivedProjects
-      : projects.filter((p) => filter === "ALL" ? p.status !== "SHIPPED" : p.status === filter);
+  const filtered = visibleProjects(projects, archivedProjects, filter, today);
+  const counts = filterCounts(projects, archivedProjects, today);
   const visibleIds = filtered.map(p => p.id);
 
   // TODAY view: build unified timeline
@@ -403,12 +403,11 @@ export default function Departures() {
   const time = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
   const date = now.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }).toUpperCase();
 
-  // NEXT UP — highest scoring active project
-  const nextUpId = (() => {
-    const scorable = projects.filter((p) => p.status !== "SHIPPED" && p.status !== "QUEUED");
-    if (!scorable.length) return null;
-    return scorable.reduce((best, p) => scoreProject(p) > scoreProject(best) ? p : best, scorable[0]).id;
-  })();
+  // NEXT UP — the one card the board points at. Its next action is also
+  // the plain-words START HERE line under the header.
+  const nextUp = nextUpProject(projects);
+  const nextUpId = nextUp ? nextUp.id : null;
+  const startHere = startHereText(nextUp);
 
   const intervals = [0.06, 0.12, 0.25, 0.5, 1.0];
   const filters = FILTERS;
@@ -437,21 +436,21 @@ export default function Departures() {
               {isToday ? "Today" : "Departures"}
             </h1>
             <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "4px" }}>
-              <div style={sys("9px", G4, { letterSpacing: "0.12em" })}>
+              <div style={whisper({ letterSpacing: "0.12em" })}>
                 {isToday ? date : "USD-COMPOSED PROJECT STATE"}
               </div>
               <div title={formatDuration(sessionMins)} style={{ width: "5px", height: "5px", borderRadius: "50%", background: sessionColor(sessionMins), transition: "background 0.3s ease", cursor: "default" }} />
               {unsaved > 0 && (
                 <div role="status"
                   title={`${unsaved} change${unsaved === 1 ? "" : "s"} not saved yet. The board is retrying; keep this tab open until the dot clears.`}
-                  style={{ width: "5px", height: "5px", borderRadius: "50%", background: ACCENT, cursor: "default" }} />
+                  style={{ width: "5px", height: "5px", borderRadius: "50%", background: WHITE, cursor: "default" }} />
               )}
             </div>
             {reloadNotice && (
               <div
                 role="status"
                 title="The board was changed on the server since this page loaded (for example by a restore), so this page reloaded the projects to match. Edits held during the reload were re-applied to the board as it is now."
-                style={sys("9px", G3, { letterSpacing: "0.12em", marginTop: "4px", whiteSpace: "nowrap", cursor: "default" })}
+                style={whisper({ letterSpacing: "0.12em", marginTop: "4px", whiteSpace: "nowrap", cursor: "default" })}
               >
                 BOARD RELOADED · THIS PAGE WAS BEHIND
               </div>
@@ -466,7 +465,7 @@ export default function Departures() {
                   : "Today's backup didn't work. Your board still saves as normal, and the backup is tried again every 30 minutes. "
                     + (backup.last ? `Newest good backup: ${backup.last}. ` : "")
                     + "The reason is in the board's window, or in launcher.log in the .departures folder.")}
-                style={sys("9px", RISK, { letterSpacing: "0.12em", marginTop: "4px", whiteSpace: "nowrap", cursor: "default" })}
+                style={whisper({ color: RISK, letterSpacing: "0.12em", marginTop: "4px", whiteSpace: "nowrap", cursor: "default" })}
               >
                 {backup.problem === "damaged" ? "BOARD MAY BE DAMAGED" : "BACKUP FAILED"}
               </div>
@@ -475,7 +474,7 @@ export default function Departures() {
               <div
                 role="status"
                 title="The PC clock is behind the newest backup, so backups are kept separately and nothing is pruned until the clock is right. Set the clock forward to let old backups be cleaned up again."
-                style={sys("9px", RISK, { letterSpacing: "0.12em", marginTop: "4px", whiteSpace: "nowrap", cursor: "default" })}
+                style={whisper({ color: RISK, letterSpacing: "0.12em", marginTop: "4px", whiteSpace: "nowrap", cursor: "default" })}
               >
                 PC CLOCK IS BEHIND · BACKUPS KEPT SEPARATELY
               </div>
@@ -488,8 +487,8 @@ export default function Departures() {
             <div style={{ textAlign: "right", minWidth: "80px" }}>
               {weather && !zipEditing ? (
                 <div onClick={() => { setZipDraft(settings.zip); setZipEditing(true); }} style={{ cursor: "pointer" }}>
-                  <div style={sys("9px", G2, { fontWeight: 600, textAlign: "right" })}>{weather.temp}° {weather.desc.toUpperCase()}</div>
-                  <div style={sys("9px", G4, { marginTop: "2px", textAlign: "right" })}>{weather.city}</div>
+                  <div style={whisper({ fontWeight: 600, textAlign: "right" })}>{weather.temp}° {weather.desc.toUpperCase()}</div>
+                  <div style={whisper({ marginTop: "2px", textAlign: "right" })}>{weather.city}</div>
                 </div>
               ) : (
                 <div>
@@ -533,15 +532,27 @@ export default function Departures() {
         </div>
       </div>
 
+      {/* START HERE — the one line the board says out loud in amber */}
+      <div style={{ display: "flex", alignItems: "baseline", gap: "12px", padding: "12px 24px", borderBottom: `1px solid ${G4}` }}>
+        <span style={sys("11px", ACCENT, { fontWeight: 700, letterSpacing: "0.14em", flexShrink: 0 })}>START HERE</span>
+        <span style={{ width: "24px", height: "2px", background: ACCENT, alignSelf: "center", flexShrink: 0 }} />
+        <span style={sentence({ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" })}>{startHere}</span>
+      </div>
+
       {/* FILTERS */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 24px", borderBottom: `1px solid ${G4}` }}>
         <div style={{ display: "flex" }}>
           {filters.map((f) => (
             <button key={f} onClick={() => setFilter(f)} style={{
               background: "transparent", border: "none", fontFamily: MONO, fontSize: "11px",
-              fontWeight: filter === f ? 700 : 400, color: filter === f ? WHITE : G4,
-              letterSpacing: "0.1em", padding: "8px 12px", cursor: "pointer", transition: "color 0.12s",
-            }}>{f}</button>
+              fontWeight: filter === f ? 700 : 400, color: filter === f ? WHITE : WHISPER,
+              letterSpacing: "0.1em", padding: "8px 10px", cursor: "pointer", transition: "color 0.12s",
+            }}>
+              {f}
+              <span style={{ marginLeft: "5px", color: filter === f ? WHITE : WHISPER, fontVariantNumeric: "tabular-nums" }}>
+                {counts[f] ?? 0}
+              </span>
+            </button>
           ))}
         </div>
         {/* Font size + alignment controls */}
@@ -550,7 +561,7 @@ export default function Departures() {
             {FONT_SIZES.map(fs => (
               <button key={fs.label} onClick={() => saveSetting("fontSize", String(fs.value))} style={{
                 background: "transparent", border: "none", fontFamily: MONO, fontSize: "11px",
-                color: parseInt(settings.fontSize) === fs.value ? G1 : G3,
+                color: parseInt(settings.fontSize) === fs.value ? WHITE : WHISPER,
                 cursor: "pointer", padding: "8px 8px", letterSpacing: "0.06em", transition: "color 0.12s",
               }}>{fs.label}</button>
             ))}
@@ -560,7 +571,7 @@ export default function Departures() {
             {["left", "center", "right"].map(a => (
               <button key={a} onClick={() => saveSetting("alignment", a)} style={{
                 background: "transparent", border: "none", fontFamily: MONO, fontSize: "11px",
-                color: settings.alignment === a ? G1 : G3,
+                color: settings.alignment === a ? WHITE : WHISPER,
                 cursor: "pointer", padding: "8px 8px", letterSpacing: "0.06em", transition: "color 0.12s",
               }}>{a === "left" ? "◁" : a === "center" ? "·" : "▷"}</button>
             ))}
@@ -571,7 +582,7 @@ export default function Departures() {
       {/* VIEWER BANNER */}
       {isViewer && (
         <div style={{ padding: "8px 24px", background: G6, borderBottom: `1px solid ${G4}`, textAlign: "center" }}>
-          <span style={sys("9px", G3, { letterSpacing: "0.08em" })}>VIEWING · READ ONLY</span>
+          <span style={whisper({ letterSpacing: "0.08em" })}>VIEWING · READ ONLY</span>
         </div>
       )}
 
@@ -625,7 +636,7 @@ export default function Departures() {
 
         {!isToday && filtered.length === 0 && (
           <div style={{ padding: "48px 36px", textAlign: "center" }}>
-            <div style={{ fontFamily: DISPLAY, fontSize: "14px", color: G4, letterSpacing: "0.2em", textRendering: "optimizeLegibility" }}>{filter === "ALL" ? "NO ACTIVE DEPARTURES" : `NO ${filter} PROJECTS`}</div>
+            <div style={{ fontFamily: DISPLAY, fontSize: "14px", color: WHISPER, letterSpacing: "0.2em", textRendering: "optimizeLegibility" }}>{filter === "ALL" ? "NO ACTIVE DEPARTURES" : `NO ${filter} PROJECTS`}</div>
           </div>
         )}
       </div>
@@ -636,12 +647,12 @@ export default function Departures() {
           <button onClick={addEvent} title="Add event" style={{
             width: "36px", height: "36px", borderRadius: "50%",
             background: G5, border: `1px solid ${G4}`,
-            color: G3, fontFamily: MONO, fontSize: "9px", fontWeight: 700,
+            color: WHISPER, fontFamily: MONO, fontSize: "11px", fontWeight: 700,
             cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
             transition: "all 0.15s", letterSpacing: "0.02em",
           }}
-            onMouseEnter={(e) => { e.currentTarget.style.borderColor = G2; e.currentTarget.style.color = G2; }}
-            onMouseLeave={(e) => { e.currentTarget.style.borderColor = G4; e.currentTarget.style.color = G3; }}>
+            onMouseEnter={(e) => { e.currentTarget.style.borderColor = WHISPER; e.currentTarget.style.color = WHITE; }}
+            onMouseLeave={(e) => { e.currentTarget.style.borderColor = G4; e.currentTarget.style.color = WHISPER; }}>
             EV+
           </button>
         )}
@@ -649,47 +660,47 @@ export default function Departures() {
           <button onClick={() => { loadViewers(); setShowShare(true); }} title="Share board" style={{
             width: "44px", height: "44px", borderRadius: "50%",
             background: G5, border: `1px solid ${G4}`,
-            color: G3, fontFamily: MONO, fontSize: "9px", fontWeight: 700,
+            color: WHISPER, fontFamily: MONO, fontSize: "11px", fontWeight: 700,
             cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
             transition: "all 0.15s", letterSpacing: "0.02em",
           }}
-            onMouseEnter={e => { e.currentTarget.style.borderColor = G2; e.currentTarget.style.color = G2; }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor = G4; e.currentTarget.style.color = G3; }}>
+            onMouseEnter={e => { e.currentTarget.style.borderColor = WHISPER; e.currentTarget.style.color = WHITE; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = G4; e.currentTarget.style.color = WHISPER; }}>
             SHR
           </button>
         )}
         <button onClick={() => setShowRecap(true)} style={{
           width: "44px", height: "44px", borderRadius: "50%",
           background: G5, border: `1px solid ${G4}`,
-          color: G3, fontFamily: MONO, fontSize: "9px", fontWeight: 700,
+          color: WHISPER, fontFamily: MONO, fontSize: "11px", fontWeight: 700,
           cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
           transition: "all 0.15s", letterSpacing: "0.02em",
         }}
-          onMouseEnter={(e) => { e.currentTarget.style.borderColor = G2; e.currentTarget.style.color = G2; }}
-          onMouseLeave={(e) => { e.currentTarget.style.borderColor = G4; e.currentTarget.style.color = G3; }}>
+          onMouseEnter={(e) => { e.currentTarget.style.borderColor = WHISPER; e.currentTarget.style.color = WHITE; }}
+          onMouseLeave={(e) => { e.currentTarget.style.borderColor = G4; e.currentTarget.style.color = WHISPER; }}>
           REC
         </button>
         {!isViewer && (
           <button onClick={() => moveProject("up", undefined, visibleIds)} title="Move up" style={{
             width: "44px", height: "44px", borderRadius: "50%",
             background: G5, border: openId ? `1px solid ${G4}` : "none",
-            color: openId ? G2 : G4, fontFamily: MONO, fontSize: "14px", fontWeight: 400,
+            color: openId ? WHITE : G3, fontFamily: MONO, fontSize: "14px", fontWeight: 400,
             cursor: openId ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center",
             transition: "all 0.15s", lineHeight: 1,
           }}
-            onMouseEnter={(e) => { if (openId) { e.currentTarget.style.borderColor = G2; e.currentTarget.style.color = WHITE; } }}
-            onMouseLeave={(e) => { e.currentTarget.style.borderColor = openId ? G4 : "transparent"; e.currentTarget.style.color = openId ? G2 : G4; }}>▲</button>
+            onMouseEnter={(e) => { if (openId) { e.currentTarget.style.borderColor = WHITE; } }}
+            onMouseLeave={(e) => { e.currentTarget.style.borderColor = openId ? G4 : "transparent"; }}>▲</button>
         )}
         {!isViewer && (
           <button onClick={() => moveProject("down", undefined, visibleIds)} title="Move down" style={{
             width: "44px", height: "44px", borderRadius: "50%",
             background: G5, border: openId ? `1px solid ${G4}` : "none",
-            color: openId ? G2 : G4, fontFamily: MONO, fontSize: "14px", fontWeight: 400,
+            color: openId ? WHITE : G3, fontFamily: MONO, fontSize: "14px", fontWeight: 400,
             cursor: openId ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center",
             transition: "all 0.15s", lineHeight: 1,
           }}
-            onMouseEnter={(e) => { if (openId) { e.currentTarget.style.borderColor = G2; e.currentTarget.style.color = WHITE; } }}
-            onMouseLeave={(e) => { e.currentTarget.style.borderColor = openId ? G4 : "transparent"; e.currentTarget.style.color = openId ? G2 : G4; }}>▼</button>
+            onMouseEnter={(e) => { if (openId) { e.currentTarget.style.borderColor = WHITE; } }}
+            onMouseLeave={(e) => { e.currentTarget.style.borderColor = openId ? G4 : "transparent"; }}>▼</button>
         )}
         {!isViewer && (
           <button onClick={() => openId && remove(openId)} style={{
@@ -699,17 +710,16 @@ export default function Departures() {
             cursor: openId ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center",
             transition: "all 0.15s", lineHeight: 1, paddingBottom: "2px",
           }}
-            onMouseEnter={(e) => { if (openId) { e.currentTarget.style.background = "#b04040"; e.currentTarget.style.color = "#000"; } }}
+            onMouseEnter={(e) => { if (openId) { e.currentTarget.style.background = RED; e.currentTarget.style.color = "#000"; } }}
             onMouseLeave={(e) => { e.currentTarget.style.background = openId ? G4 : G5; e.currentTarget.style.color = openId ? WHITE : G3; }}>−</button>
         )}
         {!isViewer && (
           <button onClick={add} style={{
             width: "44px", height: "44px", borderRadius: "50%",
-            background: ACCENT, border: "none", color: "#000",
+            background: WHITE, border: "none", color: BG,
             fontFamily: DISPLAY, fontSize: "22px", fontWeight: 500, cursor: "pointer",
             display: "flex", alignItems: "center", justifyContent: "center",
             transition: "all 0.15s", lineHeight: 1, paddingBottom: "2px",
-            boxShadow: `0 4px 18px ${ACCENT}33`,
           }}
             onMouseEnter={(e) => e.currentTarget.style.transform = "scale(1.06)"}
             onMouseLeave={(e) => e.currentTarget.style.transform = "scale(1)"}>+</button>
@@ -725,7 +735,7 @@ export default function Departures() {
 
       {/* FOOTER */}
       <div style={{ padding: "24px 24px 48px", textAlign: "center" }}>
-        <span style={sys("9px", G5, { letterSpacing: "0.2em" })}>DEPARTURES {version} · USD-COMPOSED · SOLARI PROTOCOL</span>
+        <span style={whisper({ letterSpacing: "0.2em" })}>DEPARTURES {version} · USD-COMPOSED · SOLARI PROTOCOL</span>
       </div>
 
       {undo && (
@@ -735,9 +745,9 @@ export default function Departures() {
           background: G5, border: `1px solid ${G4}`, borderRadius: "4px",
           padding: "10px 14px", boxShadow: "0 8px 24px #00000088",
         }}>
-          <span style={sys("9px", G2, { letterSpacing: "0.1em" })}>ARCHIVED · {(undo.name || "").toUpperCase()}</span>
+          <span style={sys("11px", WHISPER, { letterSpacing: "0.1em" })}>ARCHIVED · {(undo.name || "").toUpperCase()}</span>
           <button onClick={undoArchive} style={{
-            ...sys("9px", ACCENT), background: "transparent", border: `1px solid ${G4}`,
+            ...sys("11px", WHITE), background: "transparent", border: `1px solid ${G4}`,
             padding: "6px 10px", borderRadius: "4px", cursor: "pointer", letterSpacing: "0.1em",
           }}>UNDO</button>
         </div>

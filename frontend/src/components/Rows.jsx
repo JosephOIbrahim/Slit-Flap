@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { ACCENT, MONO, RED, G1, G2, G3, G4, G5, G6, sys, inp } from "../theme";
+import { WHITE, WHISPER, HOVER, RISK, G4, G5, G6, whisper, sentence, inp } from "../theme";
 
 // ─── EVENT EDIT PANEL ────────────────────────────────────────
 
@@ -31,9 +31,9 @@ function EventEditPanel({ event, projects, onUpdate, onDelete }) {
           </select>
         </div>
         <button onClick={() => onDelete(event.id)}
-          style={{ ...sys("9px", G3), background: "transparent", border: `1px solid ${G4}`, padding: "8px 12px", cursor: "pointer", borderRadius: "4px" }}
-          onMouseEnter={e => { e.currentTarget.style.borderColor = RED; e.currentTarget.style.color = RED; }}
-          onMouseLeave={e => { e.currentTarget.style.borderColor = G4; e.currentTarget.style.color = G3; }}>
+          style={{ ...whisper(), background: "transparent", border: `1px solid ${G4}`, padding: "8px 12px", cursor: "pointer", borderRadius: "4px" }}
+          onMouseEnter={e => { e.currentTarget.style.borderColor = RISK; e.currentTarget.style.color = RISK; }}
+          onMouseLeave={e => { e.currentTarget.style.borderColor = G4; e.currentTarget.style.color = WHISPER; }}>
           DELETE
         </button>
       </div>
@@ -56,18 +56,15 @@ export function EventRow({ event, projects = [], open, onToggle, onUpdate, onDel
         display: "flex", alignItems: "center", justifyContent: "space-between",
       }}
         onClick={onToggle}
-        onMouseEnter={(e) => { e.currentTarget.parentElement.style.background = "#202020"; }}
+        onMouseEnter={(e) => { e.currentTarget.parentElement.style.background = HOVER; }}
         onMouseLeave={(e) => { e.currentTarget.parentElement.style.background = G5; }}>
         <div style={{ display: "flex", alignItems: "center", gap: "12px", flex: 1, minWidth: 0 }}>
-          <span style={sys("9px", G2, { fontWeight: 600, minWidth: "36px" })}>{event.time}</span>
-          <span style={{
-            fontFamily: MONO, fontSize: "9px", fontWeight: 400, color: G1,
-            letterSpacing: "0.04em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-          }}>{event.name}</span>
+          <span style={whisper({ color: WHITE, fontWeight: 600, minWidth: "42px" })}>{event.time}</span>
+          <span style={sentence({ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" })}>{event.name}</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "12px", flexShrink: 0 }}>
-          {linked && <span style={sys("9px", G3, { letterSpacing: "0.08em" })}>→ {linked}</span>}
-          <span style={sys("9px", G4, { letterSpacing: "0.06em" })}>{event.endTime || event.end}</span>
+          {linked && <span style={whisper({ letterSpacing: "0.08em" })}>→ {linked}</span>}
+          <span style={whisper({ letterSpacing: "0.06em" })}>{event.endTime || event.end}</span>
         </div>
       </div>
       {open && !readOnly && <EventEditPanel event={event} projects={projects} onUpdate={onUpdate} onDelete={onDelete} />}
@@ -89,11 +86,11 @@ export function EmailRow({ email }) {
       onMouseEnter={(e) => { e.currentTarget.style.background = G5; }}
       onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>
       <div style={{ display: "flex", alignItems: "center", gap: "12px", flex: 1, minWidth: 0 }}>
-        <span style={sys("9px", G3, { minWidth: "36px" })}>{email.time}</span>
-        <span style={sys("9px", G3, { fontWeight: 600 })}>{email.from}</span>
-        <span style={sys("9px", G4, { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 })}>{email.subject}</span>
+        <span style={whisper({ minWidth: "42px" })}>{email.time}</span>
+        <span style={whisper({ fontWeight: 600 })}>{email.from}</span>
+        <span style={whisper({ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 })}>{email.subject}</span>
       </div>
-      {email.linkedProject && <span style={sys("9px", G4, { letterSpacing: "0.06em" })}>→ {email.linkedProject}</span>}
+      {email.linkedProject && <span style={whisper({ letterSpacing: "0.06em" })}>→ {email.linkedProject}</span>}
     </div>
   );
 }
@@ -107,8 +104,8 @@ export function NowLine() {
   const m = now.getMinutes().toString().padStart(2, "0");
   return (
     <div style={{ display: "flex", alignItems: "center", gap: "12px", padding: "4px 36px", margin: "4px 0" }}>
-      <span style={sys("9px", ACCENT, { fontWeight: 700 })}>NOW {h}:{m}</span>
-      <div style={{ flex: 1, height: "1px", background: `linear-gradient(to right, ${ACCENT}, transparent)` }} />
+      <span style={whisper({ color: WHITE, fontWeight: 700 })}>NOW {h}:{m}</span>
+      <div style={{ flex: 1, height: "1px", background: `linear-gradient(to right, ${WHITE}, transparent)` }} />
     </div>
   );
 }
@@ -118,7 +115,7 @@ export function NowLine() {
 export function SectionLabel({ label }) {
   return (
     <div style={{ padding: "12px 36px 4px" }}>
-      <span style={sys("9px", G4, { letterSpacing: "0.14em", textTransform: "uppercase" })}>{label}</span>
+      <span style={whisper({ letterSpacing: "0.14em", textTransform: "uppercase" })}>{label}</span>
     </div>
   );
 }

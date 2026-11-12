@@ -1,4 +1,4 @@
-import { ACCENT, RED, G1, G3, G4 } from "./theme.js";
+import { RISK, WHITE, WHISPER } from "./theme.js";
 
 export { localDate, nextHalfHour } from "./time.js";
 
@@ -13,9 +13,11 @@ export function departure(p) {
   const dl = new Date(p.deadline + "T00:00:00");
   if (isNaN(dl.getTime())) return null;
   const days = Math.round((startOfDay(dl) - startOfDay(new Date())) / MS_DAY);
-  if (days < 0) return { label: `DELAYED ${-days}D`, color: RED, days };
-  if (days === 0) return { label: "DEPARTS TODAY", color: ACCENT, days };
-  if (days <= 7) return { label: `DEPARTS ${days}D`, color: ACCENT, days };
+  // Late is a warning; a date coming up is simply information. Neither
+  // spends the accent, which belongs to START HERE and the next-up card.
+  if (days < 0) return { label: `DELAYED ${-days}D`, color: RISK, days };
+  if (days === 0) return { label: "DEPARTS TODAY", color: WHITE, days };
+  if (days <= 7) return { label: `DEPARTS ${days}D`, color: WHITE, days };
   return null;
 }
 
@@ -70,11 +72,47 @@ export function formatDuration(mins) {
 export const FILTERS = ["ALL", "TODAY", "ACTIVE", "ROLLING", "BLOCKED", "REVIEW", "QUEUED", "SHIPPED", "ARCHIVED"];
 
 export function statusColor(s) {
-  if (s === "ACTIVE" || s === "ROLLING") return ACCENT;
-  if (s === "BLOCKED") return RED;
-  if (s === "REVIEW") return G1;  // readable, quieter than amber
-  if (s === "SHIPPED") return G3;
-  return G4;
+  if (s === "BLOCKED") return RISK;
+  if (s === "QUEUED" || s === "SHIPPED") return WHISPER;  // quiet, still readable
+  return WHITE;                                           // ACTIVE, ROLLING, REVIEW
+}
+
+// The one project the board points at. SHIPPED and QUEUED are not
+// work waiting on you, so they never take the next-up slot.
+export function nextUpProject(projects) {
+  const scorable = projects.filter((p) => p.status !== "SHIPPED" && p.status !== "QUEUED");
+  if (!scorable.length) return null;
+  return scorable.reduce((best, p) => scoreProject(p) > scoreProject(best) ? p : best, scorable[0]);
+}
+
+// START HERE, in plain words: the project and the next action.
+export function startHereText(project) {
+  if (!project) return "Nothing is waiting on you. Pick a card, or add one.";
+  return project.next ? `${project.name} — ${project.next}` : project.name;
+}
+
+// ─── FILTERS ─────────────────────────────────────────────────
+
+export function matchesFilter(p, filter, today) {
+  if (filter === "ALL") return p.status !== "SHIPPED";
+  if (filter === "TODAY") return p.status !== "SHIPPED" && !!p.todayTime && p.todayDate === today;
+  return p.status === filter;
+}
+
+export function visibleProjects(projects, archived, filter, today) {
+  if (filter === "ARCHIVED") return archived;
+  return projects.filter((p) => matchesFilter(p, filter, today));
+}
+
+// A count per filter button, so the board says how much is behind each word.
+export function filterCounts(projects, archived, today) {
+  const counts = {};
+  for (const f of FILTERS) {
+    counts[f] = f === "ARCHIVED"
+      ? archived.length
+      : projects.filter((p) => matchesFilter(p, f, today)).length;
+  }
+  return counts;
 }
 
 export function timeToMinutes(t) {
