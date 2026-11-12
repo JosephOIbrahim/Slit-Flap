@@ -26,7 +26,7 @@ function EditPanel({ project, onUpdate, onDelete, onRestore }) {
   const u = (k, v) => onUpdate({ ...project, [k]: v });
   return (
     <div style={{ padding: "18px 24px 18px", borderTop: `1px solid ${G4}`, background: G6 }} onClick={(e) => e.stopPropagation()}>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "8px" }}>
+      <div className="edit-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "8px" }}>
         <input value={project.name} onChange={(e) => u("name", e.target.value)} placeholder="PROJECT" style={inp} />
         <input value={project.next} onChange={(e) => u("next", e.target.value)} placeholder="NEXT ACTION" style={inp} />
       </div>
@@ -47,7 +47,7 @@ function EditPanel({ project, onUpdate, onDelete, onRestore }) {
           </button>
         )}
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "8px", marginBottom: "12px" }}>
+      <div className="edit-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "8px", marginBottom: "12px" }}>
         <select value={project.domain} onChange={(e) => u("domain", e.target.value)} style={inp}>
           {DOMAINS.map((d) => <option key={d} value={d}>{d}</option>)}
         </select>

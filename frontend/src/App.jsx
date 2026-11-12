@@ -15,6 +15,7 @@ import { useState, useEffect, useRef } from "react";
 import { ACCENT, WHITE, WHISPER, BG, RED, RISK, DISPLAY, MONO, G2, G3, G4, G5, G6, sys, whisper, sentence, FONT_SIZES } from "./theme";
 import { api, saveState, startSaveQueue } from "./api";
 import { changedFields } from "./projectFields";
+import { isPhoneWidth, flapSizeFor } from "./layout";
 import { sessionColor, formatDuration, timeToMinutes, fetchWeather, localDate, nextHalfHour, FILTERS, nextUpProject, startHereText, filterCounts, visibleProjects } from "./utils";
 import { ProjectCard } from "./components/ProjectCard";
 import { EventRow, EmailRow, NowLine, SectionLabel } from "./components/Rows";
@@ -56,6 +57,7 @@ export default function Departures() {
   const [viewers, setViewers] = useState([]);
   const [newViewerEmail, setNewViewerEmail] = useState("");
   const [clockWrong, setClockWrong] = useState(false);
+  const [vw, setVw] = useState(() => (typeof window === "undefined" ? 1280 : window.innerWidth));
   const [reloadNotice, setReloadNotice] = useState(false);
   const prevFilter = useRef(filter);
 
@@ -71,6 +73,13 @@ export default function Departures() {
   const reloadBase = useRef([]);
   const startedAt = useRef(null);
   const projectsRef = useRef([]);
+
+  useEffect(() => {
+    const onResize = () => setVw(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  const isPhone = isPhoneWidth(vw);
 
   useEffect(() => { projectsRef.current = projects; }, [projects]);
   useEffect(() => {
@@ -149,6 +158,16 @@ export default function Departures() {
       @keyframes arrive { 0% { opacity:0; transform:perspective(600px) rotateX(-50deg) translateY(-6px) } 70% { opacity:1; transform:perspective(600px) rotateX(2deg) } 100% { opacity:1; transform:perspective(600px) rotateX(0) } }
       .arrive { animation: arrive 0.36s cubic-bezier(0.22,1,0.36,1) both; transform-origin: top center; }
       @keyframes flapFlip { 0% { transform: perspective(200px) rotateX(-60deg); opacity:0.3; } 50% { transform: perspective(200px) rotateX(8deg); opacity:1; } 100% { transform: perspective(200px) rotateX(0); opacity:1; } }
+      @media (max-width: 600px) {
+        .board { padding-bottom: 68px; }
+        .filters-bar { flex-wrap: wrap !important; justify-content: flex-start !important; padding: 8px 12px !important; }
+        .filter-row { width: 100%; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+        .filter-row::-webkit-scrollbar { display: none; }
+        .display-controls { display: none !important; }
+        .actions { left: 0 !important; right: 0 !important; bottom: 0 !important; padding: 8px 10px !important; gap: 4px !important; background: #111 !important; border-top: 1px solid #2a2a2a !important; justify-content: space-between !important; }
+        .actions button { width: auto !important; height: 44px !important; border-radius: 4px !important; padding: 0 8px !important; font-size: 10px !important; letter-spacing: 0.08em !important; }
+        .edit-grid { grid-template-columns: 1fr !important; }
+      }
     `;
     document.head.appendChild(s);
     return () => document.head.removeChild(s);
@@ -355,9 +374,6 @@ export default function Departures() {
   const filtered = visibleProjects(projects, archivedProjects, filter, today);
   const counts = filterCounts(projects, archivedProjects, today);
   const visibleIds = filtered.map(p => p.id);
-  const startHere = startHereText(nextUp, nextUp && !visibleIds.includes(nextUp.id)
-    ? (isToday ? "in No time blocked" : `in ${nextUp.status}`)
-    : null);
 
   // TODAY view: build unified timeline
   const todayTimeline = (() => {
@@ -410,6 +426,9 @@ export default function Departures() {
   // the plain-words START HERE line under the header.
   const nextUp = nextUpProject(projects);
   const nextUpId = nextUp ? nextUp.id : null;
+  const startHere = startHereText(nextUp, nextUp && !visibleIds.includes(nextUp.id)
+    ? (isToday ? "in No time blocked" : `in ${nextUp.status}`)
+    : null);
 
   const intervals = [0.06, 0.12, 0.25, 0.5, 1.0];
   const filters = FILTERS;
@@ -423,11 +442,12 @@ export default function Departures() {
     open: openId === p.id,
     onToggle: () => setOpenId(openId === p.id ? null : p.id),
     isNextUp: p.id === nextUpId,
-    flapSize, flapAlign, readOnly: isViewer,
+    flapSize: flapSizeFor({ width: vw, text: p.name, preferred: flapSize }),
+    flapAlign, readOnly: isViewer,
   });
 
   return (
-    <div style={{ background: BG, minHeight: "100vh", fontFamily: MONO }}>
+    <div className="board" style={{ background: BG, minHeight: "100vh", fontFamily: MONO }}>
 
       {/* HEADER */}
       <div style={{ padding: "24px 24px 12px", borderBottom: `1px solid ${G4}` }}>
@@ -542,8 +562,8 @@ export default function Departures() {
       </div>
 
       {/* FILTERS */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 24px", borderBottom: `1px solid ${G4}` }}>
-        <div style={{ display: "flex" }}>
+      <div className="filters-bar" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 24px", borderBottom: `1px solid ${G4}` }}>
+        <div className="filter-row" style={{ display: "flex" }}>
           {filters.map((f) => (
             <button key={f} onClick={() => setFilter(f)} style={{
               background: "transparent", border: "none", fontFamily: MONO, fontSize: "11px",
@@ -558,7 +578,7 @@ export default function Departures() {
           ))}
         </div>
         {/* Font size + alignment controls */}
-        <div style={{ display: "flex", alignItems: "center" }}>
+        <div className="display-controls" style={{ display: "flex", alignItems: "center" }}>
           <div style={{ display: "flex", gap: "0px" }}>
             {FONT_SIZES.map(fs => (
               <button key={fs.label} onClick={() => saveSetting("fontSize", String(fs.value))} style={{
@@ -644,7 +664,7 @@ export default function Departures() {
       </div>
 
       {/* ACTIONS */}
-      <div style={{ position: "fixed", bottom: "24px", right: "24px", display: "flex", gap: "8px", zIndex: 50 }}>
+      <div className="actions" style={{ position: "fixed", bottom: "24px", right: "24px", display: "flex", gap: "8px", zIndex: 50 }}>
         {!isViewer && isToday && (
           <button onClick={addEvent} title="Add event" style={{
             width: "36px", height: "36px", borderRadius: "50%",
@@ -655,7 +675,7 @@ export default function Departures() {
           }}
             onMouseEnter={(e) => { e.currentTarget.style.borderColor = WHISPER; e.currentTarget.style.color = WHITE; }}
             onMouseLeave={(e) => { e.currentTarget.style.borderColor = G4; e.currentTarget.style.color = WHISPER; }}>
-            EV+
+            {isPhone ? "EVENT" : "EV+"}
           </button>
         )}
         {!isViewer && (
@@ -668,7 +688,7 @@ export default function Departures() {
           }}
             onMouseEnter={e => { e.currentTarget.style.borderColor = WHISPER; e.currentTarget.style.color = WHITE; }}
             onMouseLeave={e => { e.currentTarget.style.borderColor = G4; e.currentTarget.style.color = WHISPER; }}>
-            SHR
+            {isPhone ? "SHARE" : "SHR"}
           </button>
         )}
         <button onClick={() => setShowRecap(true)} style={{
@@ -680,9 +700,9 @@ export default function Departures() {
         }}
           onMouseEnter={(e) => { e.currentTarget.style.borderColor = WHISPER; e.currentTarget.style.color = WHITE; }}
           onMouseLeave={(e) => { e.currentTarget.style.borderColor = G4; e.currentTarget.style.color = WHISPER; }}>
-          REC
+          {isPhone ? "RECAP" : "REC"}
         </button>
-        {!isViewer && (
+        {!isViewer && !isPhone && (
           <button onClick={() => moveProject("up", undefined, visibleIds)} title="Move up" style={{
             width: "44px", height: "44px", borderRadius: "50%",
             background: G5, border: openId ? `1px solid ${G4}` : "none",
@@ -691,9 +711,9 @@ export default function Departures() {
             transition: "all 0.15s", lineHeight: 1,
           }}
             onMouseEnter={(e) => { if (openId) { e.currentTarget.style.borderColor = WHITE; } }}
-            onMouseLeave={(e) => { e.currentTarget.style.borderColor = openId ? G4 : "transparent"; }}>▲</button>
+            onMouseLeave={(e) => { e.currentTarget.style.borderColor = openId ? G4 : "transparent"; }}>{isPhone ? "UP" : "▲"}</button>
         )}
-        {!isViewer && (
+        {!isViewer && !isPhone && (
           <button onClick={() => moveProject("down", undefined, visibleIds)} title="Move down" style={{
             width: "44px", height: "44px", borderRadius: "50%",
             background: G5, border: openId ? `1px solid ${G4}` : "none",
@@ -702,9 +722,9 @@ export default function Departures() {
             transition: "all 0.15s", lineHeight: 1,
           }}
             onMouseEnter={(e) => { if (openId) { e.currentTarget.style.borderColor = WHITE; } }}
-            onMouseLeave={(e) => { e.currentTarget.style.borderColor = openId ? G4 : "transparent"; }}>▼</button>
+            onMouseLeave={(e) => { e.currentTarget.style.borderColor = openId ? G4 : "transparent"; }}>{isPhone ? "DOWN" : "▼"}</button>
         )}
-        {!isViewer && (
+        {!isViewer && !isPhone && (
           <button onClick={() => openId && remove(openId)} style={{
             width: "44px", height: "44px", borderRadius: "50%",
             background: openId ? G4 : G5, border: "none",
@@ -713,7 +733,7 @@ export default function Departures() {
             transition: "all 0.15s", lineHeight: 1, paddingBottom: "2px",
           }}
             onMouseEnter={(e) => { if (openId) { e.currentTarget.style.background = RED; e.currentTarget.style.color = "#000"; } }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = openId ? G4 : G5; e.currentTarget.style.color = openId ? WHITE : G3; }}>−</button>
+            onMouseLeave={(e) => { e.currentTarget.style.background = openId ? G4 : G5; e.currentTarget.style.color = openId ? WHITE : G3; }}>{isPhone ? "ARCHIVE" : "−"}</button>
         )}
         {!isViewer && (
           <button onClick={add} style={{
@@ -724,7 +744,7 @@ export default function Departures() {
             transition: "all 0.15s", lineHeight: 1, paddingBottom: "2px",
           }}
             onMouseEnter={(e) => e.currentTarget.style.transform = "scale(1.06)"}
-            onMouseLeave={(e) => e.currentTarget.style.transform = "scale(1)"}>+</button>
+            onMouseLeave={(e) => e.currentTarget.style.transform = "scale(1)"}>{isPhone ? "NEW" : "+"}</button>
         )}
       </div>
 
