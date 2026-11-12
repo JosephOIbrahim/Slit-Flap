@@ -1,5 +1,7 @@
 """CLI restore safety regressions from the operations review."""
 
+from pathlib import Path
+
 import pytest
 from click.testing import CliRunner
 
@@ -33,3 +35,14 @@ def test_a_bare_backup_name_is_not_shadowed_by_the_working_directory(
 
     assert result.exit_code == 0, result.output
     assert ids_in(db.DB_PATH) == ids_in(backup)
+
+
+def test_manual_restore_steps_respect_a_relocated_data_folder():
+    using = Path(__file__).resolve().parent.parent / "docs" / "USING.md"
+    steps = using.read_text(encoding="utf-8").split("## Restore by hand", 1)[1].split(
+        "\n## ", 1
+    )[0]
+    assert "%DEPARTURES_HOME%" in steps
+    assert "%USERPROFILE%\\.departures" in steps
+    assert "$DEPARTURES_HOME" in steps
+    assert "~/.departures" in steps
