@@ -26,6 +26,12 @@ def test_unknown_project_writes_change_nothing(owner):
     assert "ghost" not in ids
 
 
+def test_unknown_viewer_is_a_404(owner):
+    response = owner.delete("/api/viewers/ghost")
+    assert response.status_code == 404
+    assert "No such viewer" in response.text
+
+
 def test_unknown_event_is_a_404(owner):
     assert owner.put("/api/events/ghost", json={"name": "x"}).status_code == 404
     assert owner.delete("/api/events/ghost").status_code == 404

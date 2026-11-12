@@ -1517,12 +1517,13 @@ async def list_viewers() -> list[dict]:
         ]
 
 
-async def remove_viewer(vid: str) -> dict:
-    """Delete a viewer. Returns {id, deleted: True}."""
+async def remove_viewer(vid: str) -> dict | None:
+    """Delete a viewer. Returns {id, deleted: True}, or None if unknown."""
     async with _db() as db:
         await db.execute("DELETE FROM viewers WHERE id = ?", (vid,))
+        changed = (await (await db.execute("SELECT changes()")).fetchone())[0]
         await db.commit()
-        return {"id": vid, "deleted": True}
+        return {"id": vid, "deleted": True} if changed else None
 
 
 async def get_viewer_by_token(token: str) -> dict | None:

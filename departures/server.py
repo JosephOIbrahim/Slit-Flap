@@ -544,7 +544,10 @@ async def add_viewer(request: Request):
 
 @app.delete("/api/viewers/{vid}", dependencies=[Depends(require_owner)])
 async def remove_viewer(vid: str):
-    return await db.remove_viewer(vid)
+    removed = await db.remove_viewer(vid)
+    if removed is None:
+        return JSONResponse({"error": "No such viewer"}, status_code=404)
+    return removed
 
 
 # ── Static file serving ──────────────────────────────────────────
