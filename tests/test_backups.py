@@ -306,6 +306,43 @@ def test_a_failed_backup_is_tried_again_half_an_hour_later(owner, monkeypatch):
     assert len(attempts) == 2
 
 
+def test_a_running_daily_backup_does_not_start_a_second_one(board, monkeypatch):
+    start_board()  # today's first copy
+    first_copy = db.backup_dir() / daily_backups()[0]
+    first_bytes = first_copy.read_bytes()
+    asyncio.run(db.create_project({"id": "changed", "name": "Changed"}))
+    tomorrow = date.today() + timedelta(days=1)
+    monkeypatch.setattr(server, "_today", lambda: tomorrow)
+
+    entered = threading.Event()
+    release = threading.Event()
+    calls = []
+    real_backup = db.backup_daily
+
+    def blocked_backup(day):
+        calls.append(day)
+        entered.set()
+        assert release.wait(5)
+        return real_backup(day)
+
+    monkeypatch.setattr(db, "backup_daily", blocked_backup)
+
+    async def run_concurrent_requests():
+        first = asyncio.create_task(server._daily_backup())
+        try:
+            assert await asyncio.to_thread(entered.wait, 5)
+            await server._daily_backup()  # another request while the first is blocked
+        finally:
+            release.set()
+        await first
+
+    asyncio.run(run_concurrent_requests())
+
+    assert calls == [tomorrow]
+    assert first_copy.read_bytes() == first_bytes
+    assert (db.backup_dir() / f"departures-{tomorrow.isoformat()}.db").exists()
+
+
 # ── The owner can see when backups are failing ──────────────────
 # Under the silent launcher there's no terminal to read, so the board's
 # header shows it (it polls /api/session every minute).
