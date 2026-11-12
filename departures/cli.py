@@ -75,57 +75,75 @@ def cli(ctx, port: int, host: str, no_browser: bool) -> None:
     if ctx.invoked_subcommand is not None:
         return
 
-    # ── Already departed? Just open the board ────────────────────
-    if _board_already_running(port):
-        click.echo(f"  {AMBER}Board already departed on port {port}.{RESET}")
-        if not no_browser:
-            click.echo(f"  {WHITE}→ Opening in browser...{RESET}")
-            webbrowser.open(f"http://localhost:{port}")
-        return
+    from departures import board_lock
 
-    # ── Print startup info ───────────────────────────────────────
-    click.echo(BANNER)
-    click.echo(f"  {WHITE}→ Server:{RESET}  http://localhost:{port}")
-    if host == "0.0.0.0":
-        import socket
-        try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            s.connect(("8.8.8.8", 80))
-            lan_ip = s.getsockname()[0]
-            s.close()
-        except Exception:
-            lan_ip = "YOUR-IP"
-        click.echo(f"  {WHITE}→ Share:{RESET}   http://{lan_ip}:{port}")
-        click.echo(f"  {DIM}  Add viewers in the board's Share panel{RESET}")
-    if no_browser:
-        click.echo(f"  {DIM}→ Board:   --no-browser{RESET}")
-    else:
-        click.echo(f"  {WHITE}→ Board:{RESET}   Opening in browser...")
-    from departures import db
-    click.echo(f"  {DIM}→ Data:    {db.DB_PATH}{RESET}")
-    click.echo(f"  {DIM}→ Backups: {db.backup_dir()}  (each day it changes, newest {db.BACKUP_DAYS} kept){RESET}")
-    click.echo(f"  {DIM}→ Press Ctrl+C to stop{RESET}")
-    click.echo()
-
-    # ── Open browser in daemon thread ────────────────────────────
-    if not no_browser:
-        t = threading.Thread(target=_open_browser, args=(port,), daemon=True)
-        t.start()
-
-    # ── Start uvicorn ────────────────────────────────────────────
+    lock = board_lock.BoardLock(port)
     try:
-        import uvicorn
+        lock.acquire()
+    except board_lock.BoardLocked as exc:
+        running_port = exc.info.get("port")
+        where = f" on port {running_port}" if running_port else ""
+        raise click.ClickException(
+            f"The board is already running{where}. Stop it first (Ctrl+C in its "
+            "window; if the silent launcher started it, end its python.exe in "
+            "Task Manager), then run this again."
+        ) from exc
 
-        uvicorn.run(
-            "departures.server:app",
-            host=host,
-            port=port,
-            log_level="warning",
-        )
-    except KeyboardInterrupt:
-        pass
+    try:
+        # ── Already departed? Just open the board ────────────────
+        # Compatibility with a server from before board.lock existed.
+        if _board_already_running(port):
+            click.echo(f"  {AMBER}Board already departed on port {port}.{RESET}")
+            if not no_browser:
+                click.echo(f"  {WHITE}→ Opening in browser...{RESET}")
+                webbrowser.open(f"http://localhost:{port}")
+            return
+
+        # ── Print startup info ───────────────────────────────────
+        click.echo(BANNER)
+        click.echo(f"  {WHITE}→ Server:{RESET}  http://localhost:{port}")
+        if host == "0.0.0.0":
+            import socket
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                s.connect(("8.8.8.8", 80))
+                lan_ip = s.getsockname()[0]
+                s.close()
+            except Exception:
+                lan_ip = "YOUR-IP"
+            click.echo(f"  {WHITE}→ Share:{RESET}   http://{lan_ip}:{port}")
+            click.echo(f"  {DIM}  Add viewers in the board's Share panel{RESET}")
+        if no_browser:
+            click.echo(f"  {DIM}→ Board:   --no-browser{RESET}")
+        else:
+            click.echo(f"  {WHITE}→ Board:{RESET}   Opening in browser...")
+        from departures import db
+        click.echo(f"  {DIM}→ Data:    {db.DB_PATH}{RESET}")
+        click.echo(f"  {DIM}→ Backups: {db.backup_dir()}  (each day it changes, newest {db.BACKUP_DAYS} kept){RESET}")
+        click.echo(f"  {DIM}→ Press Ctrl+C to stop{RESET}")
+        click.echo()
+
+        # ── Open browser in daemon thread ────────────────────────
+        if not no_browser:
+            t = threading.Thread(target=_open_browser, args=(port,), daemon=True)
+            t.start()
+
+        # ── Start uvicorn ────────────────────────────────────────
+        try:
+            import uvicorn
+
+            uvicorn.run(
+                "departures.server:app",
+                host=host,
+                port=port,
+                log_level="warning",
+            )
+        except KeyboardInterrupt:
+            pass
+        finally:
+            click.echo(f"\n  {DIM}Server stopped.{RESET}")
     finally:
-        click.echo(f"\n  {DIM}Server stopped.{RESET}")
+        lock.release()
 
 
 _COUNT_LABELS = {"projects": "projects", "notes": "notes", "logs": "log entries",
@@ -304,6 +322,17 @@ def _restore_failure_message(exc: Exception, board_was_missing: bool,
 
 
 def _refuse_if_running(port: int) -> None:
+    from departures import board_lock
+
+    if board_lock.is_locked():
+        info = board_lock.read_lock()
+        running_port = info.get("port")
+        where = f" on port {running_port}" if running_port else ""
+        raise click.ClickException(
+            f"The board is running{where}. Stop it first (Ctrl+C in its "
+            "window; if the silent launcher started it, end its python.exe in "
+            "Task Manager), then run this again."
+        )
     if _board_already_running(port):
         raise click.ClickException(
             f"The board is running on port {port}. Stop it first (Ctrl+C in its "
