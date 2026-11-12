@@ -38,6 +38,7 @@ export default function Departures() {
   const [showRecap, setShowRecap] = useState(false);
   const [sessionMins, setSessionMins] = useState(0);
   const [backup, setBackup] = useState({ failed: false, problem: null, last: null });
+  const [version, setVersion] = useState("0.5");
   const [settings, setSettings] = useState({ zip: "", fontSize: "104", alignment: "left" });
   const [weather, setWeather] = useState(null);
   const [zipEditing, setZipEditing] = useState(false);
@@ -174,6 +175,7 @@ export default function Departures() {
       setSessionMins(d.elapsedMinutes);
       setBackup({ failed: !!d.backupFailed, problem: d.backupProblem || null, last: d.lastBackup || null });
       setClockWrong(!!d.clockWrong);
+      if (d.version) setVersion(d.version);
       if (startedAt.current && d.startedAt && d.startedAt !== startedAt.current) reloadBoard();
       if (d.startedAt) startedAt.current = d.startedAt;
     }).catch(() => {});
@@ -648,7 +650,7 @@ export default function Departures() {
 
       {/* FOOTER */}
       <div style={{ padding: "24px 24px 48px", textAlign: "center" }}>
-        <span style={sys("9px", G5, { letterSpacing: "0.2em" })}>DEPARTURES 0.5 · USD-COMPOSED · SOLARI PROTOCOL</span>
+        <span style={sys("9px", G5, { letterSpacing: "0.2em" })}>DEPARTURES {version} · USD-COMPOSED · SOLARI PROTOCOL</span>
       </div>
     </div>
   );

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { ACCENT, RED, MONO, G1, G2, G3, G4, G5, G6, sys, inp, STATUSES, TRACKS, DOMAINS, SWATCHES } from "../theme";
+import { ACCENT, RED, RISK, MONO, G1, G2, G3, G4, G5, G6, sys, inp, STATUSES, TRACKS, DOMAINS, SWATCHES } from "../theme";
 import { relTime, statusColor, departure } from "../utils";
 import { SplitFlapName } from "./SplitFlap";
 import { api } from "../api";
@@ -102,26 +102,42 @@ function NotesBack({ project, active, onFlip, readOnly }) {
   const ref = useRef(null);
   const loaded = useRef(false);
   const timer = useRef(null);
+  const stamp = useRef(null);       // the note version the editor loaded
+  const noticeTimer = useRef(null);
   const [savedAt, setSavedAt] = useState(null);
+  const [stale, setStale] = useState(false);
+
+  const loadNotes = () => api.get(`/projects/${project.id}/notes`).then(n => {
+    if (ref.current) ref.current.innerHTML = n.content || "";
+    stamp.current = n.updatedAt || null;
+    if (n.updatedAt) setSavedAt(n.updatedAt);
+  }).catch(() => {});
 
   // Lazy-load notes the first time the card flips
   useEffect(() => {
     if (active && !loaded.current) {
       loaded.current = true;
-      api.get(`/projects/${project.id}/notes`).then(n => {
-        if (ref.current) ref.current.innerHTML = n.content || "";
-        if (n.updatedAt) setSavedAt(n.updatedAt);
-      }).catch(() => {});
+      loadNotes();
     }
   }, [active, project.id]);
 
-  useEffect(() => () => clearTimeout(timer.current), []);
+  useEffect(() => () => {
+    clearTimeout(timer.current);
+    clearTimeout(noticeTimer.current);
+  }, []);
 
   const save = () => {
     if (readOnly || !ref.current) return;
-    api.put(`/projects/${project.id}/notes`, { content: ref.current.innerHTML })
-      .then(n => setSavedAt(n.updatedAt))
-      .catch(() => {});
+    api.put(`/projects/${project.id}/notes`, { content: ref.current.innerHTML, updatedAt: stamp.current })
+      .then(n => { setSavedAt(n.updatedAt); stamp.current = n.updatedAt; })
+      .catch(err => {
+        if (err && err.status === 409) {  // a restore (or another page) changed the note
+          loadNotes();
+          setStale(true);
+          clearTimeout(noticeTimer.current);
+          noticeTimer.current = setTimeout(() => setStale(false), 15000);
+        }
+      });
   };
 
   const onInput = () => {
@@ -150,6 +166,11 @@ function NotesBack({ project, active, onFlip, readOnly }) {
           ↩ BOARD
         </button>
       </div>
+      {stale && (
+        <span role="status" style={sys("8px", RISK, { letterSpacing: "0.1em" })}>
+          NOTES RELOADED · THIS PAGE WAS BEHIND
+        </span>
+      )}
       <div ref={ref} contentEditable={!readOnly} suppressContentEditableWarning
         onInput={onInput} onBlur={save}
         style={{

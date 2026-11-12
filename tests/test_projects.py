@@ -33,3 +33,23 @@ def test_a_save_from_a_page_that_is_behind_the_board_is_refused(owner):
     caught_up = owner.put("/api/projects/tab", json={**loaded, "name": "Mine Again",
                                                     "updatedAt": current["updatedAt"]})
     assert caught_up.status_code == 200
+
+
+def test_a_note_saved_from_a_page_that_is_behind_is_refused(owner):
+    owner.post("/api/projects", json={"id": "noted", "name": "Noted"})
+    assert owner.put("/api/projects/noted/notes", json={"content": "first"}).status_code == 200
+    version = owner.get("/api/projects/noted/notes").json()["updatedAt"]
+
+    assert owner.put("/api/projects/noted/notes",
+                     json={"content": "second", "updatedAt": version}).status_code == 200
+    late = owner.put("/api/projects/noted/notes",
+                     json={"content": "from a page left open", "updatedAt": version})
+    assert late.status_code == 409
+    assert "changed since this page loaded" in late.text
+    assert owner.get("/api/projects/noted/notes").json()["content"] == "second"
+
+
+def test_the_board_reports_its_version(owner):
+    from departures import __version__
+
+    assert owner.get("/api/session").json()["version"] == __version__

@@ -1100,10 +1100,19 @@ async def get_notes(pid: str) -> dict:
         return {"content": "", "updatedAt": None}
 
 
-async def update_notes(pid: str, content: str) -> dict:
-    """Upsert notes for a project. Returns {content, updatedAt}."""
+async def update_notes(pid: str, content: str, base_updated_at: str | None = None) -> dict | None:
+    """Upsert notes for a project. Returns {content, updatedAt}, or None if
+    base_updated_at names an older version than the stored note: a page left
+    open across a restore must not write its note over the restored one."""
     now = _now()
     async with _db() as db:
+        await db.execute("BEGIN IMMEDIATE")
+        row = await (await db.execute(
+            "SELECT updated_at FROM notes WHERE project_id = ?", (pid,))).fetchone()
+        current = row["updated_at"] if row else None
+        if base_updated_at is not None and current is not None and base_updated_at != current:
+            await db.rollback()
+            return None
         await db.execute(
             """INSERT INTO notes (project_id, content, updated_at)
                VALUES (?, ?, ?)

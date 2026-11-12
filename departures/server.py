@@ -239,7 +239,11 @@ async def get_notes(pid: str):
 async def update_notes(pid: str, request: Request):
     body = await request.json()
     content = body.get("content", "")
-    return await db.update_notes(pid, content)
+    updated = await db.update_notes(pid, content, body.get("updatedAt"))
+    if updated is None:
+        return JSONResponse({"error": "These notes changed since this page loaded", "stale": True},
+                            status_code=409)
+    return updated
 
 
 # ── Recap + Session ───────────────────────────────────────────────
@@ -256,6 +260,7 @@ async def session(request: Request):
     info: dict[str, Any] = {
         "startedAt": _session_started_at,
         "elapsedMinutes": _elapsed_minutes(),
+        "version": __version__,
     }
     # Backup health is the owner's business only (and never the raw error,
     # which names folders on this PC): the header warns when it's failing.
