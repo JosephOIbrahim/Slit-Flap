@@ -13,7 +13,7 @@ import { useState, useEffect, useRef } from "react";
 // ─────────────────────────────────────────────────────────────
 
 import { ACCENT, WHITE, BG, RISK, DISPLAY, MONO, G1, G2, G3, G4, G5, G6, sys, FONT_SIZES } from "./theme";
-import { api } from "./api";
+import { api, saveState, startSaveQueue } from "./api";
 import { scoreProject, sessionColor, formatDuration, timeToMinutes, fetchWeather, localDate, nextHalfHour, FILTERS } from "./utils";
 import { ProjectCard } from "./components/ProjectCard";
 import { EventRow, EmailRow, NowLine, SectionLabel } from "./components/Rows";
@@ -41,6 +41,7 @@ export default function Departures() {
   const [version, setVersion] = useState("0.5");
   const [archivedProjects, setArchivedProjects] = useState([]);
   const [undo, setUndo] = useState(null);  // {id, name} while the 5s undo is offered
+  const [unsaved, setUnsaved] = useState(0);
   const undoTimer = useRef(null);
   const [settings, setSettings] = useState({ zip: "", fontSize: "104", alignment: "left" });
   const [weather, setWeather] = useState(null);
@@ -170,6 +171,11 @@ export default function Departures() {
     }).catch(() => {});
     api.get('/me').then(d => setRole(d.role)).catch(() => {});
   }, []);
+
+  // Unsaved work: writes that failed for a retryable reason sit in the
+  // queue and are retried until they land. One amber dot says so.
+  useEffect(() => saveState.subscribe(({ pending }) => setUnsaved(pending)), []);
+  useEffect(() => startSaveQueue(), []);
 
   // Session pulse. A changed startedAt means the server restarted or a
   // restore swapped the board: refetch everything the page is showing.
@@ -408,6 +414,11 @@ export default function Departures() {
                 {isToday ? date : "USD-COMPOSED PROJECT STATE"}
               </div>
               <div title={formatDuration(sessionMins)} style={{ width: "5px", height: "5px", borderRadius: "50%", background: sessionColor(sessionMins), transition: "background 0.3s ease", cursor: "default" }} />
+              {unsaved > 0 && (
+                <div role="status"
+                  title={`${unsaved} change${unsaved === 1 ? "" : "s"} not saved yet. The board is retrying; keep this tab open until the dot clears.`}
+                  style={{ width: "5px", height: "5px", borderRadius: "50%", background: ACCENT, cursor: "default" }} />
+              )}
             </div>
             {reloadNotice && (
               <div

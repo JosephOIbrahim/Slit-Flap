@@ -61,6 +61,8 @@ Notes auto-save after a second of stillness. They only become editable once the 
 
 A deadline turns into board language: **DEPARTS 3D**, **DEPARTS TODAY**, **DELAYED 2D**.
 
+If a save cannot reach the board, one amber dot appears in the header and the board keeps retrying; keep the tab open until it clears.
+
 ### NEXT UP
 
 The board scores active work and puts an amber border on the winner:
