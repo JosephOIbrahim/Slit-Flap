@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { ACCENT, RED, RISK, MONO, G1, G2, G3, G4, G5, G6, sys, inp, STATUSES, TRACKS, DOMAINS, SWATCHES } from "../theme";
-import { relTime, statusColor, departure } from "../utils";
+import { relTime, statusColor, departure, localDate } from "../utils";
 import { SplitFlapName } from "./SplitFlap";
 import { api } from "../api";
 
@@ -28,6 +28,23 @@ function EditPanel({ project, onUpdate, onDelete }) {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "8px" }}>
         <input value={project.name} onChange={(e) => u("name", e.target.value)} placeholder="PROJECT" style={inp} />
         <input value={project.next} onChange={(e) => u("next", e.target.value)} placeholder="NEXT ACTION" style={inp} />
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
+        <span style={sys("9px", G3, { letterSpacing: "0.1em" })}>TIME TODAY</span>
+        <input type="time" value={project.todayTime || ""}
+          onChange={(e) => {
+            const time = e.target.value;
+            onUpdate({ ...project, todayTime: time, todayDate: time ? localDate() : "" });
+          }}
+          style={{ ...inp, width: "120px" }} />
+        {project.todayTime && project.todayDate && project.todayDate !== localDate() && (
+          <button onClick={() => onUpdate({ ...project, todayTime: "", todayDate: "" })}
+            title="This block was for another day"
+            style={{ ...sys("8px", G3), background: "transparent", border: `1px solid ${G4}`,
+                     padding: "6px 8px", borderRadius: "4px", cursor: "pointer" }}>
+            {project.todayDate} · CLEAR
+          </button>
+        )}
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "8px", marginBottom: "12px" }}>
         <select value={project.domain} onChange={(e) => u("domain", e.target.value)} style={inp}>

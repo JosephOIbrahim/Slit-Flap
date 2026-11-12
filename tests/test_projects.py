@@ -53,3 +53,15 @@ def test_the_board_reports_its_version(owner):
     from departures import __version__
 
     assert owner.get("/api/session").json()["version"] == __version__
+
+
+def test_a_time_block_carries_its_day(owner):
+    from datetime import date
+
+    owner.post("/api/projects", json={"id": "block", "name": "Block"})
+    saved = owner.put("/api/projects/block", json={
+        "todayTime": "14:30", "todayDate": date.today().isoformat()}).json()
+    assert saved["updated"] is True
+    [block] = [p for p in owner.get("/api/projects").json() if p["id"] == "block"]
+    assert block["todayTime"] == "14:30"
+    assert block["todayDate"] == date.today().isoformat()

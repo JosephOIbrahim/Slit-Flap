@@ -148,3 +148,14 @@ def test_back_to_back_resets_never_overwrite_a_backup(board):
     backups = seed_backups()
     assert len(backups) == 2
     assert sum("mine" in project_ids(b) for b in backups) == 1  # the first one survives
+
+
+def test_seed_blocks_are_dated_today(board):
+    from datetime import date
+
+    asyncio.run(db.init_db())
+    with closing(sqlite3.connect(db.DB_PATH)) as conn:
+        dated = conn.execute(
+            "SELECT today_date FROM projects WHERE today_time <> ''").fetchall()
+    assert dated
+    assert all(row[0] == date.today().isoformat() for row in dated)

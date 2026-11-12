@@ -50,6 +50,13 @@ export function relTime(iso) {
   return `${days}d ago`;
 }
 
+// ─── LOCAL DATE ──────────────────────────────────────────────
+// The board's day is the owner's day, not UTC's.
+export function localDate(d = new Date()) {
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
 // ─── SESSION PULSE ───────────────────────────────────────────
 
 export function sessionColor(mins) {

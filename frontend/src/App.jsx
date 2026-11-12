@@ -14,7 +14,7 @@ import { useState, useEffect, useRef } from "react";
 
 import { ACCENT, WHITE, BG, RISK, DISPLAY, MONO, G1, G2, G3, G4, G5, G6, sys, FONT_SIZES } from "./theme";
 import { api } from "./api";
-import { scoreProject, sessionColor, formatDuration, timeToMinutes, fetchWeather } from "./utils";
+import { scoreProject, sessionColor, formatDuration, timeToMinutes, fetchWeather, localDate } from "./utils";
 import { ProjectCard } from "./components/ProjectCard";
 import { EventRow, EmailRow, NowLine, SectionLabel } from "./components/Rows";
 import { RecapPanel, SharePanel } from "./components/Modals";
@@ -284,8 +284,9 @@ export default function Departures() {
   const flapAlign = settings.alignment || "left";
 
   // Standard filters
+  const today = localDate();
   const filtered = isToday
-    ? projects.filter((p) => p.status !== "SHIPPED" && p.todayTime)
+    ? projects.filter((p) => p.status !== "SHIPPED" && p.todayTime && p.todayDate === today)
     : projects.filter((p) => filter === "ALL" ? p.status !== "SHIPPED" : p.status === filter);
 
   // TODAY view: build unified timeline
@@ -324,7 +325,8 @@ export default function Departures() {
 
   // Unscheduled active projects (TODAY view)
   const unscheduled = isToday
-    ? projects.filter((p) => p.status !== "SHIPPED" && p.status !== "QUEUED" && !p.todayTime)
+    ? projects.filter((p) => p.status !== "SHIPPED" && p.status !== "QUEUED"
+        && (!p.todayTime || p.todayDate !== today))
     : [];
 
   // Clock + session pulse

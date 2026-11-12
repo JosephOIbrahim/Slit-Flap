@@ -32,9 +32,9 @@ def test_a_legacy_board_gains_sort_order(board):
     # was used to track the schema.
     db.DB_DIR.mkdir(parents=True, exist_ok=True)
     with closing(sqlite3.connect(db.DB_PATH)) as conn:
-        conn.execute("CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, track TEXT)")
-        conn.executemany("INSERT INTO projects (id, name, track) VALUES (?, ?, ?)",
-                         [("b", "B", "02"), ("a", "A", "01"), ("c", "C", "01")])
+        conn.execute("CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, track TEXT, today_time TEXT DEFAULT '')")
+        conn.executemany("INSERT INTO projects (id, name, track, today_time) VALUES (?, ?, ?, ?)",
+                         [("b", "B", "02", ""), ("a", "A", "01", ""), ("c", "C", "01", "")])
         conn.commit()
     assert version() == 0
 
@@ -78,3 +78,23 @@ def test_a_failed_migration_changes_nothing(board, monkeypatch):
     with closing(sqlite3.connect(db.DB_PATH)) as conn:
         cols = {row[1] for row in conn.execute("PRAGMA table_info(projects)")}
     assert "half_added" not in cols
+
+
+def test_a_block_from_before_the_date_column_keeps_its_day(board):
+    # A board at schema 1 has time blocks but no date for them. They are kept
+    # visible by dating them today, not dropped from TODAY.
+    from datetime import date
+
+    asyncio.run(db.init_db())
+    with closing(sqlite3.connect(db.DB_PATH)) as conn:
+        conn.execute("ALTER TABLE projects DROP COLUMN today_date")
+        conn.execute("UPDATE projects SET today_time = '10:00' WHERE id = 'brand-refresh'")
+        conn.execute("PRAGMA user_version = 1")
+        conn.commit()
+    assert version() == 1
+
+    asyncio.run(db.init_db())
+    assert version() == db.SCHEMA_VERSION
+    with closing(sqlite3.connect(db.DB_PATH)) as conn:
+        got = conn.execute("SELECT today_date FROM projects WHERE id = 'brand-refresh'").fetchone()[0]
+    assert got == date.today().isoformat()

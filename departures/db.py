@@ -93,10 +93,10 @@ class _Table:
 PROJECTS = _Table(
     "projects",
     ["id", "name", "status", "track", "domain", "next_action",
-     "deadline", "bg_color", "mile", "mile_total", "today_time",
+     "deadline", "bg_color", "mile", "mile_total", "today_time", "today_date",
      "sort_order", "last_touched", "created_at", "updated_at"],
     {"next_action": "next", "bg_color": "bgColor", "mile_total": "of",
-     "today_time": "todayTime", "sort_order": "sortOrder",
+     "today_time": "todayTime", "today_date": "todayDate", "sort_order": "sortOrder",
      "last_touched": "lastTouched", "created_at": "createdAt", "updated_at": "updatedAt"},
 )
 
@@ -123,6 +123,7 @@ CREATE TABLE IF NOT EXISTS projects (
     mile INTEGER DEFAULT 0,
     mile_total INTEGER DEFAULT 0,
     today_time TEXT DEFAULT '',
+    today_date TEXT DEFAULT '',
     sort_order INTEGER DEFAULT 0,
     last_touched TEXT,
     created_at TEXT,
@@ -237,11 +238,13 @@ async def _insert_seeds(db) -> None:
         await db.execute(
             """INSERT INTO projects
                (id, name, status, track, domain, next_action, deadline, bg_color,
-                mile, mile_total, today_time, sort_order, last_touched, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, '', '', ?, ?, ?, ?, ?, ?, ?)""",
+                mile, mile_total, today_time, today_date, sort_order,
+                last_touched, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, '', '', ?, ?, ?, ?, ?, ?, ?, ?)""",
             (sid, name, status, track, domain, next_action,
-             mile, mile_total, today_time, i, last_touched,
-             "2026-02-21T00:00:00+00:00", now.isoformat()),
+             mile, mile_total, today_time,
+             date.today().isoformat() if today_time else "",
+             i, last_touched, "2026-02-21T00:00:00+00:00", now.isoformat()),
         )
     await _seed_events_settings(db)
     await db.commit()
@@ -913,8 +916,21 @@ async def _add_sort_order(db) -> None:
         await db.execute("UPDATE projects SET sort_order = ? WHERE id = ?", (i, row["id"]))
 
 
+async def _add_today_date(db) -> None:
+    """Date each time block, so a block only sits in TODAY on its own day.
+    Blocks already on the board get today's date, so they stay visible once."""
+    cols = {row[1] for row in await (await db.execute("PRAGMA table_info(projects)")).fetchall()}
+    if "today_date" not in cols:
+        await db.execute("ALTER TABLE projects ADD COLUMN today_date TEXT DEFAULT ''")
+    await db.execute(
+        "UPDATE projects SET today_date = date('now', 'localtime') "
+        "WHERE today_time <> '' AND (today_date IS NULL OR today_date = '')"
+    )
+
+
 _MIGRATIONS = [
     (1, "projects.sort_order", _add_sort_order),
+    (2, "projects.today_date", _add_today_date),
 ]
 SCHEMA_VERSION = _MIGRATIONS[-1][0]
 
