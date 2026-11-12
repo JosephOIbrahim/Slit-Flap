@@ -1,7 +1,7 @@
 {
   "name": "departures-frontend",
   "private": true,
-  "version": "0.5.11",
+  "version": "0.5.12",
   "type": "module",
   "scripts": {
     "test": "node --test src/time.test.js src/score.test.js src/notes.test.js src/api.test.js src/projectFields.test.js src/layout.test.js",
