@@ -22,6 +22,8 @@ Three boundaries, each with one job:
 
 The default bind is `127.0.0.1`. That is the security boundary: without `--host 0.0.0.0`, no other device can reach the API. In share mode the same process admits invited viewers read-only through `/join/<token>` and refuses every write from them.
 
+Viewers can read the display settings (font size, alignment) so their board looks like the owner's; the weather zip and every write stay owner-only.
+
 Writes also require an `X-Departures` header. A page on another site can make the owner's browser send a simple POST without reading the answer, but it cannot add a custom header without a browser preflight, and the board grants no cross-origin access. The board's own page sends the header on every write.
 
 ## When things change

@@ -77,7 +77,7 @@ def test_admin_routes_are_owner_only(make_viewer):
     assert viewer.get("/api/viewers").status_code == 403
     assert viewer.post("/api/viewers", json={"email": "new@example.com"}).status_code == 403
     assert viewer.delete(f"/api/viewers/{invite['id']}").status_code == 403
-    assert viewer.get("/api/settings").status_code == 403
+    assert viewer.get("/api/settings").status_code == 200  # display settings are shared
     assert viewer.put("/api/settings", json={"zip": "10001"}).status_code == 403
 
 
@@ -86,3 +86,15 @@ def test_the_owner_still_has_the_run_of_the_board(owner):
     assert owner.put("/api/settings", json={"zip": "10001"}).status_code == 200
     assert owner.get("/api/viewers").status_code == 200
     assert owner.post("/api/projects", json={"id": "mine", "name": "Mine"}).status_code == 200
+
+
+def test_a_viewer_gets_display_settings_but_not_the_zip(make_viewer, owner):
+    owner.put("/api/settings", json={"zip": "10001", "fontSize": "140", "alignment": "center"})
+    viewer, _ = make_viewer()
+    seen = viewer.get("/api/settings").json()
+    assert seen["fontSize"] == "140"
+    assert seen["alignment"] == "center"
+    assert "zip" not in seen
+    assert "demo" in seen  # computed, harmless
+
+    assert "zip" in owner.get("/api/settings").json()

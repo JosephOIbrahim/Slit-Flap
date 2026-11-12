@@ -489,11 +489,15 @@ async def delete_event(eid: str):
 
 # ── Settings endpoints ───────────────────────────────────────────
 
-# Settings are the owner's: display size, alignment, and the zip the weather
-# comes from. A viewer's board uses the built-in defaults.
-@app.get("/api/settings", dependencies=[Depends(require_owner)])
-async def get_settings():
-    return await db.get_settings()
+# Display settings are shared so a viewer sees the board as the owner does.
+# The zip (where the weather comes from) stays the owner's, and all writes
+# are owner-only.
+@app.get("/api/settings", dependencies=[Depends(require_viewer)])
+async def get_settings(request: Request):
+    settings = await db.get_settings()
+    if getattr(request.state, "role", None) != "owner":
+        settings.pop("zip", None)
+    return settings
 
 
 @app.put("/api/settings", dependencies=[Depends(require_owner)])
