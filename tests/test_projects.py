@@ -130,6 +130,20 @@ def test_the_order_endpoint_renumbers_in_one_call(owner):
     assert bad.status_code == 400
 
 
+def test_adding_a_log_touches_the_project_at_the_entry_timestamp(board, monkeypatch):
+    asyncio.run(db.init_db())
+    asyncio.run(db.create_project({"id": "logged", "name": "Logged"}))
+    stamp = "2026-11-12T10:11:12.123456+00:00"
+    monkeypatch.setattr(db, "_now", lambda: stamp)
+
+    entry = asyncio.run(db.add_log("logged", "worked"))
+
+    project = next(p for p in asyncio.run(db.list_projects()) if p["id"] == "logged")
+    assert entry["at"] == stamp
+    assert project["lastTouched"] == entry["at"]
+    assert project["updatedAt"] == entry["at"]
+
+
 def test_a_field_save_changes_only_that_field_and_returns_the_new_version(owner):
     owner.post("/api/projects", json={"id": "p", "name": "Old", "next": "keep me", "status": "ACTIVE"})
     [before] = [p for p in owner.get("/api/projects").json() if p["id"] == "p"]
