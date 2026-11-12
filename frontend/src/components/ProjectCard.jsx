@@ -3,7 +3,7 @@ import { ACCENT, WHITE, WHISPER, HOVER, NOTES_BG, RISK, MONO, G1, G4, G5, G6, sy
 import { relTime, statusColor, departure, localDate } from "../utils";
 import { SplitFlapName } from "./SplitFlap";
 import { api } from "../api";
-import { canSaveNotes, plainTextFrom } from "../notesEdit";
+import { canSaveNotes, createNotesSaveQueue, plainTextFrom } from "../notesEdit";
 
 // ─── PROGRESS (mile markers) ─────────────────────────────────
 
@@ -143,21 +143,30 @@ function NotesBack({ project, active, onFlip, readOnly }) {
     if (active && !loadedOk.current) loadNotes();
   }, [active, project.id]);
 
+  const saveQueue = useRef(null);
+  if (!saveQueue.current) {
+    saveQueue.current = createNotesSaveQueue({
+      getDraft: () => ref.current ? ref.current.innerHTML : "",
+      getNote: () => api.get(`/projects/${project.id}/notes`),
+      putNote: (content, keepalive) => {
+        const body = { content, updatedAt: stamp.current };
+        return keepalive
+          ? api.putKeepalive(`/projects/${project.id}/notes`, body)
+          : api.put(`/projects/${project.id}/notes`, body);
+      },
+      onVersion: (value) => { stamp.current = value; },
+      onSaved: (n) => { if (n && n.updatedAt) setSavedAt(n.updatedAt); },
+      onConflict: () => {
+        setStale(true);
+        clearTimeout(noticeTimer.current);
+        noticeTimer.current = setTimeout(() => setStale(false), 15000);
+      },
+    });
+  }
+
   const save = ({ keepalive = false } = {}) => {
     if (!canSaveNotes(loadState, readOnly) || !ref.current) return;
-    const body = { content: ref.current.innerHTML, updatedAt: stamp.current };
-    const call = keepalive
-      ? api.putKeepalive(`/projects/${project.id}/notes`, body)
-      : api.put(`/projects/${project.id}/notes`, body);
-    call.then(n => { setSavedAt(n.updatedAt); stamp.current = n.updatedAt; })
-      .catch(err => {
-        if (err && err.status === 409) {  // a restore (or another page) changed the note
-          loadNotes();
-          setStale(true);
-          clearTimeout(noticeTimer.current);
-          noticeTimer.current = setTimeout(() => setStale(false), 15000);
-        }
-      });
+    saveQueue.current.save(ref.current.innerHTML, { keepalive });
   };
   saveRef.current = save;
 
@@ -216,7 +225,7 @@ function NotesBack({ project, active, onFlip, readOnly }) {
       </div>
       {stale && (
         <span role="status" style={whisper({ color: RISK, letterSpacing: "0.1em" })}>
-          NOTES RELOADED · THIS PAGE WAS BEHIND
+          NOTE CHANGED ELSEWHERE · YOUR DRAFT IS KEPT
         </span>
       )}
       <div ref={ref} contentEditable={!readOnly && loadState === "ready"} suppressContentEditableWarning
