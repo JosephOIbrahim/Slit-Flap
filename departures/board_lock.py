@@ -77,9 +77,9 @@ def is_locked() -> bool:
                 pass
         return False
     except OSError:
-        # An existing file that cannot be opened is not proof of a live board.
-        # The server's own acquire still reports a real startup error cleanly.
-        return False
+        # On Windows the holder's sharing/byte lock can make the open itself
+        # fail. An existing lock file that cannot be inspected must fail closed.
+        return True
 
 
 class BoardLock:
