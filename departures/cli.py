@@ -373,8 +373,8 @@ def restore(ctx, backup: str | None, yes: bool, port: int | None) -> None:
     _refuse_if_running(port)
 
     source = Path(backup)
-    if not source.exists() and (db.backup_dir() / backup).is_file():
-        source = db.backup_dir() / backup
+    if backup == source.name:  # a bare name always belongs to the backups folder
+        source = db.backup_dir() / source.name
     try:
         staged, incoming = db.stage_restore(source)
     except db.RestoreError as exc:
