@@ -54,14 +54,14 @@ const remember = (method, path, body, generation) => {
 const request = async (method, path, body) => {
   let res;
   try {
+    const headers = method === "GET" ? undefined : {
+      ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+      "X-Departures": "1",
+    };
     res = await fetch(`/api${path}`, {
       method,
-      ...(body === undefined
-        ? {}
-        : {
-            headers: { "Content-Type": "application/json", "X-Departures": "1" },
-            body: JSON.stringify(body),
-          }),
+      ...(headers ? { headers } : {}),
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
   } catch (cause) {
     const err = new Error(`Could not reach the board (${method} /api${path})`);

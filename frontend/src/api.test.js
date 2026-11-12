@@ -19,10 +19,12 @@ test("a notes save on pagehide uses keepalive", async () => {
   assert.equal(calls[0].url, "/api/projects/x/notes");
   assert.equal(calls[0].options.method, "PUT");
   assert.equal(calls[0].options.keepalive, true);
+  assert.equal(calls[0].options.headers["Content-Type"], "application/json");
+  assert.equal(calls[0].options.headers["X-Departures"], "1");
   assert.deepEqual(JSON.parse(calls[0].options.body), { content: "a", updatedAt: "v1" });
 });
 
-import { _resetSaveState, flushSaveQueue, saveState } from "./api.js";
+import { _resetSaveState, flushSaveQueue, saveState, startSaveQueue } from "./api.js";
 
 const reply = (status, body = {}) => ({ ok: status < 400, status, json: async () => body });
 
@@ -166,6 +168,81 @@ test("a successful PUT clears only its own queued generation", async () => {
     assert.equal(saveState.status().pending, 0);
   } finally {
     global.fetch = realFetch;
+  }
+});
+
+test("bodyless DELETE writes carry the board header", async () => {
+  _resetSaveState();
+  const realFetch = global.fetch;
+  let seen = null;
+  global.fetch = async (url, options) => { seen = options; return reply(200, {}); };
+  try {
+    await api.del("/projects/p");
+  } finally {
+    global.fetch = realFetch;
+  }
+  assert.equal(seen.method, "DELETE");
+  assert.equal(seen.body, undefined);
+  assert.equal(seen.headers["X-Departures"], "1");
+});
+
+test("save queue replays on online and timer, and cleanup removes both", async () => {
+  _resetSaveState();
+  const realFetch = global.fetch;
+  const realWindow = global.window;
+  const realSetInterval = global.setInterval;
+  const realClearInterval = global.clearInterval;
+  let online;
+  let intervalCallback;
+  let intervalMs;
+  let clearedTimer = null;
+  let removedOnline = null;
+  const timer = { id: "save-queue" };
+  global.window = {
+    addEventListener: (name, callback) => { if (name === "online") online = callback; },
+    removeEventListener: (name, callback) => { if (name === "online") removedOnline = callback; },
+  };
+  global.setInterval = (callback, ms) => {
+    intervalCallback = callback;
+    intervalMs = ms;
+    return timer;
+  };
+  global.clearInterval = (value) => { clearedTimer = value; };
+
+  let offline = true;
+  global.fetch = async () => {
+    if (offline) throw new TypeError("offline");
+    return reply(200, {});
+  };
+  let stop = () => {};
+  try {
+    await assert.rejects(api.put("/projects/p", { name: "online replay" }));
+    assert.equal(saveState.status().pending, 1);
+    stop = startSaveQueue(4321);
+    assert.equal(intervalMs, 4321);
+
+    offline = false;
+    online();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(saveState.status().pending, 0);
+
+    offline = true;
+    await assert.rejects(api.put("/projects/p", { name: "timer replay" }));
+    assert.equal(saveState.status().pending, 1);
+    offline = false;
+    intervalCallback();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(saveState.status().pending, 0);
+
+    stop();
+    assert.equal(clearedTimer, timer);
+    assert.equal(removedOnline, online);
+  } finally {
+    stop();
+    global.fetch = realFetch;
+    global.window = realWindow;
+    global.setInterval = realSetInterval;
+    global.clearInterval = realClearInterval;
   }
 });
 
