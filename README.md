@@ -33,7 +33,7 @@ It is local-first: one SQLite file on your machine, daily verified backups, no a
 Download the `.whl` from [Releases](https://github.com/JosephOIbrahim/Slit-Flap/releases), then:
 
 ```bash
-pip install departures-0.5.7-py3-none-any.whl
+pip install departures-0.5.8-py3-none-any.whl
 departures
 ```
 
@@ -214,4 +214,4 @@ MIT
 
 ---
 
-*USD-Composed Project State · Solari Protocol v0.5.7*
+*USD-Composed Project State · Solari Protocol v0.5.8*
