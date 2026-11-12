@@ -164,6 +164,15 @@ CREATE TABLE IF NOT EXISTS notes (
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS transitions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT NOT NULL,
+    from_status TEXT DEFAULT '',
+    to_status TEXT NOT NULL,
+    at TEXT NOT NULL,
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     started_at TEXT NOT NULL,
@@ -975,11 +984,30 @@ async def _add_archived_at(db) -> None:
         await db.execute("ALTER TABLE projects ADD COLUMN archived_at TEXT DEFAULT ''")
 
 
+async def _add_transitions(db) -> None:
+    """Record status changes server-side, so the count is real evidence
+    rather than a number the browser resets on every reload."""
+    await db.execute(
+        """CREATE TABLE IF NOT EXISTS transitions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id TEXT NOT NULL,
+            from_status TEXT DEFAULT '',
+            to_status TEXT NOT NULL,
+            at TEXT NOT NULL,
+            FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+        )"""
+    )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_transitions_project ON transitions(project_id, at)"
+    )
+
+
 _MIGRATIONS = [
     (1, "projects.sort_order", _add_sort_order),
     (2, "projects.today_date", _add_today_date),
     (3, "events.date", _add_event_date),
     (4, "projects.archived_at", _add_archived_at),
+    (5, "transitions", _add_transitions),
 ]
 SCHEMA_VERSION = _MIGRATIONS[-1][0]
 
@@ -1091,11 +1119,20 @@ async def list_projects(archived: bool = False) -> list[dict]:
                 {"text": lr["text"], "at": lr["created_at"]}
             )
 
+        history_cursor = await db.execute(
+            "SELECT project_id, from_status, to_status, at FROM transitions ORDER BY at ASC, id ASC"
+        )
+        history_by_project: dict[str, list[dict]] = {}
+        for hr in await history_cursor.fetchall():
+            history_by_project.setdefault(hr["project_id"], []).append(
+                {"from": hr["from_status"], "to": hr["to_status"], "at": hr["at"]}
+            )
+
         projects = []
         for row in rows:
             out = PROJECTS.row_out(row)
             out["log"] = logs_by_project.get(row["id"], [])
-            out["history"] = []
+            out["history"] = history_by_project.get(row["id"], [])
             projects.append(out)
         return projects
 
@@ -1177,7 +1214,8 @@ async def update_project(pid: str, data: dict) -> dict | None:
     StaleUpdate, so its old values don't land over newer ones."""
     async with _db() as db:
         await db.execute("BEGIN IMMEDIATE")  # the compare and the write see one board
-        cursor = await db.execute("SELECT updated_at FROM projects WHERE id = ?", (pid,))
+        cursor = await db.execute(
+            "SELECT updated_at, status FROM projects WHERE id = ?", (pid,))
         row = await cursor.fetchone()
         if row is None:
             await db.rollback()
@@ -1192,6 +1230,12 @@ async def update_project(pid: str, data: dict) -> dict | None:
             )
         await PROJECTS.update(db, pid, data, touch=("updated_at", "last_touched"))
         changed = (await (await db.execute("SELECT changes()")).fetchone())[0]
+        new_status = data.get("status")
+        if changed and new_status and new_status != row["status"]:
+            await db.execute(
+                "INSERT INTO transitions (project_id, from_status, to_status, at) VALUES (?, ?, ?, ?)",
+                (pid, row["status"], new_status, _now()),
+            )
         await db.commit()
         return {"id": pid, "updated": True} if changed else None
 

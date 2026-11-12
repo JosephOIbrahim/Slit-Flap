@@ -91,6 +91,13 @@ erDiagram
         text source
         text linked_project
     }
+    transitions {
+        int id PK
+        text project_id FK
+        text from_status
+        text to_status
+        text at
+    }
     sessions {
         int id PK
         text started_at
@@ -111,6 +118,7 @@ erDiagram
     }
     projects ||--o{ logs : "has"
     projects ||--o| notes : "has"
+    projects ||--o{ transitions : "changed through"
     projects ||--o{ events : "links to"
 ```
 
@@ -119,6 +127,7 @@ Notes:
 - `archived_at` is the delete. An archived project, its notes and its logs stay in the file; the board hides it and the ARCHIVED filter shows it.
 - `today_time` and `today_date` travel together. A block only counts on its day.
 - `events.date` makes an event a one-day event; `linked_project` is a project id chosen from the picker.
+- `transitions` records every status change server-side, so the "N transitions" count is evidence of progress rather than a number the browser resets on reload.
 - `sessions` records work sessions, not server uptime. It is written on the first owner request after a 45-minute gap.
 
 ## Migrations
@@ -133,6 +142,7 @@ Steps so far:
 | 2 | `projects.today_date`: add it; date existing blocks today |
 | 3 | `events.date`: add it; date existing events today |
 | 4 | `projects.archived_at`: add it |
+| 5 | `transitions`: create the status-history table |
 
 An earlier 0.5.x board upgrades in place on first start, after that day's backup.
 
