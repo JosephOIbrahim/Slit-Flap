@@ -14,6 +14,7 @@ import { useState, useEffect, useRef } from "react";
 
 import { ACCENT, WHITE, BG, RISK, DISPLAY, MONO, G1, G2, G3, G4, G5, G6, sys, FONT_SIZES } from "./theme";
 import { api, saveState, startSaveQueue } from "./api";
+import { changedFields } from "./projectFields";
 import { scoreProject, sessionColor, formatDuration, timeToMinutes, fetchWeather, localDate, nextHalfHour, FILTERS } from "./utils";
 import { ProjectCard } from "./components/ProjectCard";
 import { EventRow, EmailRow, NowLine, SectionLabel } from "./components/Rows";
@@ -43,6 +44,9 @@ export default function Departures() {
   const [undo, setUndo] = useState(null);  // {id, name} while the 5s undo is offered
   const [unsaved, setUnsaved] = useState(0);
   const undoTimer = useRef(null);
+  const saveStamps = useRef(new Map());   // project id -> updatedAt the server last gave us
+  const pendingSaves = useRef(new Map()); // id -> {patch, timer}
+  const saveChains = useRef(new Map());   // id -> promise, so saves land in order
   const [settings, setSettings] = useState({ zip: "", fontSize: "104", alignment: "left" });
   const [weather, setWeather] = useState(null);
   const [zipEditing, setZipEditing] = useState(false);
@@ -85,18 +89,6 @@ export default function Departures() {
     if (!err || err.status !== 409) return;
     setReloadNotice(true);
     reloadBoard();
-  };
-
-  // Fields the page changed, so a held edit can be replayed onto the
-  // refreshed row without carrying the values a restore just replaced.
-  const changedFields = (before, after) => {
-    const out = {};
-    if (!before) return out;
-    Object.keys(after).forEach((k) => {
-      if (k === "updatedAt" || k === "history") return;
-      if (JSON.stringify(after[k]) !== JSON.stringify(before[k])) out[k] = after[k];
-    });
-    return out;
   };
 
   const loadBoard = () => Promise.all([
@@ -172,6 +164,11 @@ export default function Departures() {
     api.get('/me').then(d => setRole(d.role)).catch(() => {});
   }, []);
 
+  useEffect(() => {
+    projects.forEach((p) => saveStamps.current.set(p.id, p.updatedAt));
+    archivedProjects.forEach((p) => saveStamps.current.set(p.id, p.updatedAt));
+  }, [projects, archivedProjects]);
+
   // Unsaved work: writes that failed for a retryable reason sit in the
   // queue and are retried until they land. One amber dot says so.
   useEffect(() => saveState.subscribe(({ pending }) => setUnsaved(pending)), []);
@@ -228,6 +225,33 @@ export default function Departures() {
       })
       .catch(onSaveError);
   };
+  // Saves are field-level and debounced: typing in one field sends that
+  // field, not the whole card, and rapid keystrokes become one request.
+  const enqueueSave = (id, patch) => {
+    const previous = saveChains.current.get(id) || Promise.resolve();
+    const next = previous.then(() => {
+      const body = { ...patch };
+      const stamp = saveStamps.current.get(id);
+      if (stamp) body.updatedAt = stamp;
+      return api.put(`/projects/${id}`, body);
+    }).then((res) => {
+      if (res && res.updatedAt) {
+        saveStamps.current.set(id, res.updatedAt);
+        setProjects(prev => prev.map(x => x.id === id ? { ...x, updatedAt: res.updatedAt } : x));
+      }
+    }).catch(onSaveError);
+    saveChains.current.set(id, next);
+  };
+  const scheduleSave = (id, patch) => {
+    const entry = pendingSaves.current.get(id) || { patch: {}, timer: null };
+    Object.assign(entry.patch, patch);
+    clearTimeout(entry.timer);
+    entry.timer = setTimeout(() => {
+      pendingSaves.current.delete(id);
+      enqueueSave(id, entry.patch);
+    }, 400);
+    pendingSaves.current.set(id, entry);
+  };
   const update = (p) => {
     if (holdEdit((fresh) => {
       // Replay only what the page changed, onto the refreshed row, so a
@@ -239,8 +263,11 @@ export default function Departures() {
       if (!Object.keys(changed).length) return;
       api.put(`/projects/${p.id}`, { ...changed, updatedAt: now.updatedAt }).catch(onSaveError);
     })) return;
-    setProjects(prev => prev.map(x => x.id === p.id ? { ...p, updatedAt: new Date().toISOString() } : x));
-    api.put(`/projects/${p.id}`, p).catch(onSaveError);
+    const current = projects.find(x => x.id === p.id);
+    const patch = changedFields(current, p);
+    if (!Object.keys(patch).length) return;  // nothing actually changed
+    setProjects(prev => prev.map(x => x.id === p.id ? { ...p, updatedAt: x.updatedAt } : x));
+    scheduleSave(p.id, patch);
   };
   const loadArchived = () => api.get('/projects?archived=1').then(setArchivedProjects).catch(() => {});
   useEffect(() => { if (filter === "ARCHIVED") loadArchived(); }, [filter]);

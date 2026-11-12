@@ -87,3 +87,18 @@ def test_the_order_endpoint_renumbers_in_one_call(owner):
 
     bad = owner.put("/api/projects/order", json={"ids": "c"})
     assert bad.status_code == 400
+
+
+def test_a_field_save_changes_only_that_field_and_returns_the_new_version(owner):
+    owner.post("/api/projects", json={"id": "p", "name": "Old", "next": "keep me", "status": "ACTIVE"})
+    [before] = [p for p in owner.get("/api/projects").json() if p["id"] == "p"]
+
+    saved = owner.put("/api/projects/p", json={"name": "New", "updatedAt": before["updatedAt"]}).json()
+    assert saved["updated"] is True
+    assert saved["updatedAt"]
+
+    [after] = [p for p in owner.get("/api/projects").json() if p["id"] == "p"]
+    assert after["updatedAt"] == saved["updatedAt"]  # the reply is the stored version
+    assert after["name"] == "New"
+    assert after["next"] == "keep me"       # only the field sent changed
+    assert after["status"] == "ACTIVE"

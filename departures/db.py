@@ -1236,8 +1236,11 @@ async def update_project(pid: str, data: dict) -> dict | None:
                 "INSERT INTO transitions (project_id, from_status, to_status, at) VALUES (?, ?, ?, ?)",
                 (pid, row["status"], new_status, _now()),
             )
+        if changed:
+            fresh = await (await db.execute(
+                "SELECT updated_at FROM projects WHERE id = ?", (pid,))).fetchone()
         await db.commit()
-        return {"id": pid, "updated": True} if changed else None
+        return {"id": pid, "updated": True, "updatedAt": fresh["updated_at"]} if changed else None
 
 
 async def archive_project(pid: str) -> dict | None:
