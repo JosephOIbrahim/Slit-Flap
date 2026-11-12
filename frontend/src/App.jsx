@@ -246,6 +246,9 @@ export default function Departures() {
     if (isToday) Object.assign(fresh, { todayTime: nextHalfHour(), todayDate: localDate() });
     api.post('/projects', fresh)
       .then(({ id }) => {
+        // QUEUED is invisible in ACTIVE (and several other filters). Reveal
+        // the card before opening it so NEW always lands on something real.
+        setFilter("ALL");
         api.get('/projects').then(data => { setProjects(data); setOpenId(id); }).catch(() => {});
       })
       .catch(onSaveError);
