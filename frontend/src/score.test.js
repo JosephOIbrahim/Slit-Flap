@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   FILTERS, scoreProject, statusColor, departure,
-  nextUpProject, startHereText, filterCounts, visibleProjects, matchesFilter,
+  nextUpProject, startHereText, filterCounts, visibleProjects, matchesFilter, groupByTrack,
 } from "./utils.js";
 import {
   ACCENT, WHITE, WHISPER, RISK, BG, G5, G6, NOTES_BG, HOVER, SWATCHES,
@@ -134,4 +134,17 @@ test("visible projects: ALL hides shipped, ARCHIVED is its own list", () => {
   assert.deepEqual(visibleProjects(board, archived, "ALL", "2026-11-12").map(x => x.id), ["a", "b", "c"]);
   assert.deepEqual(visibleProjects(board, archived, "ARCHIVED", "2026-11-12").map(x => x.id), ["e"]);
   assert.deepEqual(visibleProjects(board, archived, "REVIEW", "2026-11-12").map(x => x.id), ["c"]);
+});
+
+
+test("cards group under their track with counts, in track order", () => {
+  const rows = [
+    { id: "a", track: "02" }, { id: "b", track: "01" },
+    { id: "c", track: "02" }, { id: "d", track: "04" },
+  ];
+  const groups = groupByTrack(rows);
+  assert.deepEqual(groups.map((g) => g.track), ["01", "02", "04"]);
+  assert.deepEqual(groups.map((g) => g.count), [1, 2, 1]);
+  assert.deepEqual(groups[1].items.map((p) => p.id), ["a", "c"]);
+  assert.deepEqual(groupByTrack([]), []);
 });

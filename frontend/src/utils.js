@@ -139,3 +139,18 @@ export async function fetchWeather(zip) {
     return { city: `${city}, ${state}`, temp: Math.round(wx.current_weather.temperature), desc: WMO_DESC[wx.current_weather.weathercode] || "" };
   } catch { return null; }
 }
+
+
+// ALL view: cards under their track, with a count. Tracks sort as strings
+// ("01" ... "05"), absent tracks simply do not appear.
+export function groupByTrack(projects) {
+  const groups = new Map();
+  projects.forEach((p) => {
+    const track = p.track || "";
+    if (!groups.has(track)) groups.set(track, []);
+    groups.get(track).push(p);
+  });
+  return [...groups.entries()]
+    .sort(([a], [b]) => String(a).localeCompare(String(b)))
+    .map(([track, items]) => ({ track, items, count: items.length }));
+}

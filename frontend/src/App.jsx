@@ -16,7 +16,7 @@ import { ACCENT, WHITE, WHISPER, BG, RED, RISK, DISPLAY, MONO, G2, G3, G4, G5, G
 import { api, saveState, startSaveQueue } from "./api";
 import { changedFields } from "./projectFields";
 import { isPhoneWidth, flapSizeFor } from "./layout";
-import { sessionColor, formatDuration, timeToMinutes, fetchWeather, localDate, nextHalfHour, FILTERS, nextUpProject, startHereText, filterCounts, visibleProjects } from "./utils";
+import { sessionColor, formatDuration, timeToMinutes, fetchWeather, localDate, nextHalfHour, FILTERS, nextUpProject, startHereText, filterCounts, visibleProjects, groupByTrack } from "./utils";
 import { ProjectCard } from "./components/ProjectCard";
 import { EventRow, EmailRow, NowLine, SectionLabel } from "./components/Rows";
 import { RecapPanel, SharePanel } from "./components/Modals";
@@ -57,6 +57,7 @@ export default function Departures() {
   const [viewers, setViewers] = useState([]);
   const [newViewerEmail, setNewViewerEmail] = useState("");
   const [clockWrong, setClockWrong] = useState(false);
+  const [showDisplay, setShowDisplay] = useState(false);
   const [vw, setVw] = useState(() => (typeof window === "undefined" ? 1280 : window.innerWidth));
   const [reloadNotice, setReloadNotice] = useState(false);
   const prevFilter = useRef(filter);
@@ -161,10 +162,10 @@ export default function Departures() {
         .filters-bar { flex-wrap: wrap !important; justify-content: flex-start !important; padding: 8px 12px !important; }
         .filter-row { width: 100%; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
         .filter-row::-webkit-scrollbar { display: none; }
-        .display-controls { display: none !important; }
         .actions { left: 0 !important; right: 0 !important; bottom: 0 !important; padding: 8px 10px !important; gap: 4px !important; background: #111 !important; border-top: 1px solid #2a2a2a !important; justify-content: space-between !important; }
         .actions button { width: auto !important; height: 44px !important; border-radius: 4px !important; padding: 0 8px !important; font-size: 10px !important; letter-spacing: 0.08em !important; }
         .edit-grid { grid-template-columns: 1fr !important; }
+        .display-menu { left: 0 !important; right: auto !important; }
       }
     `;
     document.head.appendChild(s);
@@ -538,15 +539,6 @@ export default function Departures() {
             {/* Clock + interval */}
             <div style={{ textAlign: "right" }}>
               <div style={{ fontFamily: MONO, fontSize: "18px", fontWeight: 800, color: G2, letterSpacing: "0.06em", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{time}</div>
-              <div style={{ display: "flex", gap: "0px", marginTop: "4px", justifyContent: "flex-end" }}>
-                {intervals.map((v) => (
-                  <button key={v} onClick={() => setInterval_(v)} style={{
-                    background: "transparent", border: "none", fontFamily: MONO, fontSize: "6px",
-                    color: interval === v ? G2 : G5, cursor: "pointer", padding: "4px 4px",
-                    letterSpacing: "0", lineHeight: 1, transition: "color 0.12s",
-                  }}>{v < 1 ? `.${String(v).split(".")[1]}` : "1s"}</button>
-                ))}
-              </div>
             </div>
           </div>
         </div>
@@ -575,27 +567,60 @@ export default function Departures() {
             </button>
           ))}
         </div>
-        {/* Font size + alignment controls */}
-        <div className="display-controls" style={{ display: "flex", alignItems: "center" }}>
-          <div style={{ display: "flex", gap: "0px" }}>
-            {FONT_SIZES.map(fs => (
-              <button key={fs.label} onClick={() => saveSetting("fontSize", String(fs.value))} style={{
-                background: "transparent", border: "none", fontFamily: MONO, fontSize: "11px",
-                color: parseInt(settings.fontSize) === fs.value ? WHITE : WHISPER,
-                cursor: "pointer", padding: "8px 8px", letterSpacing: "0.06em", transition: "color 0.12s",
-              }}>{fs.label}</button>
-            ))}
-          </div>
-          <div style={{ width: "1px", height: "12px", background: G4, marginLeft: "4px", marginRight: "4px" }} />
-          <div style={{ display: "flex", gap: "0px" }}>
-            {["left", "center", "right"].map(a => (
-              <button key={a} onClick={() => saveSetting("alignment", a)} style={{
-                background: "transparent", border: "none", fontFamily: MONO, fontSize: "11px",
-                color: settings.alignment === a ? WHITE : WHISPER,
-                cursor: "pointer", padding: "8px 8px", letterSpacing: "0.06em", transition: "color 0.12s",
-              }}>{a === "left" ? "◁" : a === "center" ? "·" : "▷"}</button>
-            ))}
-          </div>
+        {/* DISPLAY — speed, size and alignment in one place */}
+        <div style={{ position: "relative" }}>
+          <button onClick={() => setShowDisplay(v => !v)} aria-expanded={showDisplay}
+            style={{ background: "transparent", border: `1px solid ${G4}`, color: WHITE,
+                     fontFamily: MONO, fontSize: "11px", letterSpacing: "0.1em", padding: "7px 10px",
+                     borderRadius: "4px", cursor: "pointer" }}>DISPLAY</button>
+          {showDisplay && (
+            <>
+              <div onClick={() => setShowDisplay(false)}
+                style={{ position: "fixed", inset: 0, zIndex: 39 }} />
+              <div role="menu" className="display-menu" style={{ position: "absolute", right: 0, top: "calc(100% + 8px)", zIndex: 40,
+                    width: "224px", background: G6, border: `1px solid ${G4}`, borderRadius: "4px",
+                    padding: "12px", display: "flex", flexDirection: "column", gap: "12px" }}>
+                <div>
+                  <div style={whisper({ letterSpacing: "0.12em" })}>SPEED</div>
+                  <div style={{ display: "flex", gap: "2px", marginTop: "6px" }}>
+                    {intervals.map(v => (
+                      <button key={v} onClick={() => setInterval_(v)} style={{
+                        flex: 1, background: interval === v ? G4 : "transparent",
+                        border: `1px solid ${interval === v ? WHITE : G4}`, color: interval === v ? WHITE : WHISPER,
+                        fontFamily: MONO, fontSize: "10px", padding: "6px 0", borderRadius: "4px", cursor: "pointer",
+                      }}>{v < 1 ? `.${String(v).split(".")[1]}` : "1s"}</button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <div style={whisper({ letterSpacing: "0.12em" })}>SIZE</div>
+                  <div style={{ display: "flex", gap: "2px", marginTop: "6px" }}>
+                    {FONT_SIZES.map(fs => (
+                      <button key={fs.label} onClick={() => saveSetting("fontSize", String(fs.value))} style={{
+                        flex: 1, background: parseInt(settings.fontSize) === fs.value ? G4 : "transparent",
+                        border: `1px solid ${parseInt(settings.fontSize) === fs.value ? WHITE : G4}`,
+                        color: parseInt(settings.fontSize) === fs.value ? WHITE : WHISPER,
+                        fontFamily: MONO, fontSize: "10px", padding: "6px 0", borderRadius: "4px", cursor: "pointer",
+                      }}>{fs.label}</button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <div style={whisper({ letterSpacing: "0.12em" })}>ALIGN</div>
+                  <div style={{ display: "flex", gap: "2px", marginTop: "6px" }}>
+                    {["left", "center", "right"].map(a => (
+                      <button key={a} onClick={() => saveSetting("alignment", a)} style={{
+                        flex: 1, background: settings.alignment === a ? G4 : "transparent",
+                        border: `1px solid ${settings.alignment === a ? WHITE : G4}`,
+                        color: settings.alignment === a ? WHITE : WHISPER,
+                        fontFamily: MONO, fontSize: "10px", padding: "6px 0", borderRadius: "4px", cursor: "pointer",
+                      }}>{a === "left" ? "LEFT" : a === "center" ? "CENTER" : "RIGHT"}</button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -646,11 +671,22 @@ export default function Departures() {
           </>
         ) : (
           <>
-            {filtered.map((p, i) => (
-              <div key={`${p.id}-${animKey}`} className="arrive" style={{ animationDelay: `${i * interval}s`, padding: "0 12px" }}>
-                <ProjectCard {...cardProps(p)} showTime={false} />
-              </div>
-            ))}
+            {filter === "ALL"
+              ? groupByTrack(filtered).map((group) => (
+                  <div key={group.track} style={{ display: "contents" }}>
+                    <SectionLabel label={`TRACK ${group.track} · ${group.count}`} />
+                    {group.items.map((p, i) => (
+                      <div key={`${p.id}-${animKey}`} className="arrive" style={{ animationDelay: `${i * interval}s`, padding: "0 12px" }}>
+                        <ProjectCard {...cardProps(p)} showTime={false} />
+                      </div>
+                    ))}
+                  </div>
+                ))
+              : filtered.map((p, i) => (
+                  <div key={`${p.id}-${animKey}`} className="arrive" style={{ animationDelay: `${i * interval}s`, padding: "0 12px" }}>
+                    <ProjectCard {...cardProps(p)} showTime={false} />
+                  </div>
+                ))}
           </>
         )}
 
