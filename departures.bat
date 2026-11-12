@@ -9,10 +9,9 @@ cd /d "%~dp0"
 rem Use the first python that can actually import the board. A broken
 rem install earlier on PATH (missing DLL) must not stop the launcher.
 set "PY=python"
-rem Test the package the launcher actually runs: a Python earlier on PATH
-rem may import departures but not its command layer (click), or be a
-rem broken install that cannot start the board.
-%PY% -c "import departures.cli" >nul 2>&1
+rem Test what starting the board actually needs (fastapi, aiosqlite).
+rem A Python earlier on PATH may import the command layer but lack them.
+%PY% -c "import departures.server" >nul 2>&1
 if errorlevel 1 set "PY=py -3.12"
 %PY% -m departures %*
 set "EXIT_CODE=%errorlevel%"
