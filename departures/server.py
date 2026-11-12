@@ -186,8 +186,17 @@ async def session_middleware(request: Request, call_next):
 _JOIN_PATH = re.compile(r"/join/[A-Za-z0-9_-]+")
 
 
+def _set_viewer_cookie(response: Response, token: str) -> None:
+    response.set_cookie("viewer_token", token, httponly=True, max_age=30*86400, samesite="lax")
+
+
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
+    """Who is asking: the owner, an invited viewer, or nobody.
+
+    This only identifies the caller and turns strangers away; what each
+    caller may do is decided per route by require_owner / require_viewer.
+    """
     # The decoded path, exactly as the router will see it.
     path = request.scope["path"]
 
@@ -202,25 +211,29 @@ async def auth_middleware(request: Request, call_next):
         request.state.role = "owner"
         return await call_next(request)
 
-    # Check viewer token (cookie or query param)
-    token = request.cookies.get("viewer_token") or request.query_params.get("token")
+    # Check the viewer token: the cookie first, then a ?token= invite.
+    token = request.cookies.get("viewer_token")
+    from_url = False
+    if not token:
+        token = request.query_params.get("token")
+        from_url = bool(token)
     if token:
         viewer = await db.get_viewer_by_token(token)
         if viewer:
             request.state.role = "viewer"
             request.state.viewer_email = viewer["email"]
-            # Touch last_seen
             await db.touch_viewer(viewer["id"])
 
-            # Viewers can only GET (read-only)
-            if request.method not in ("GET", "HEAD", "OPTIONS"):
-                return JSONResponse({"error": "Viewers have read-only access"}, status_code=403)
+            # An invite that arrived in the URL goes into the cookie, and the
+            # browser is sent to the same address without it: the link stays
+            # out of history, the referrer and any screenshot of the URL.
+            if from_url and request.method in ("GET", "HEAD"):
+                response = RedirectResponse(
+                    url=str(request.url.remove_query_params("token")), status_code=302)
+                _set_viewer_cookie(response, token)
+                return response
 
-            response = await call_next(request)
-            # Set cookie if it came from query param
-            if not request.cookies.get("viewer_token"):
-                response.set_cookie("viewer_token", token, httponly=True, max_age=30*86400, samesite="lax")
-            return response
+            return await call_next(request)
 
     # No auth from remote host → 401
     if path.startswith("/api/"):
@@ -290,6 +303,12 @@ def require_owner(request: Request) -> None:
         raise HTTPException(status_code=403, detail="Owner only")
 
 
+def require_viewer(request: Request) -> None:
+    """Route guard: the owner or an invited viewer — anyone already admitted."""
+    if getattr(request.state, "role", None) not in ("owner", "viewer"):
+        raise HTTPException(status_code=401, detail="Unauthorized. Use an invite link to access.")
+
+
 # ── Helpers ───────────────────────────────────────────────────────
 
 async def _json_object(request: Request) -> dict:
@@ -321,19 +340,19 @@ def _elapsed_minutes() -> int:
 
 # ── Project endpoints ─────────────────────────────────────────────
 
-@app.get("/api/projects")
+@app.get("/api/projects", dependencies=[Depends(require_viewer)])
 async def list_projects(request: Request):
     archived = request.query_params.get("archived", "").lower() in ("1", "true", "yes")
     return await db.list_projects(archived=archived)
 
 
-@app.post("/api/projects")
+@app.post("/api/projects", dependencies=[Depends(require_owner)])
 async def create_project(request: Request):
     body = await _json_object(request)
     return await db.create_project(body)
 
 
-@app.put("/api/projects/order")
+@app.put("/api/projects/order", dependencies=[Depends(require_owner)])
 async def reorder_projects(request: Request):
     body = await _json_object(request)
     ids = body.get("ids")
@@ -342,7 +361,7 @@ async def reorder_projects(request: Request):
     return await db.reorder_projects(ids)
 
 
-@app.put("/api/projects/{pid}")
+@app.put("/api/projects/{pid}", dependencies=[Depends(require_owner)])
 async def update_project(pid: str, request: Request):
     body = await _json_object(request)
     try:
@@ -354,7 +373,7 @@ async def update_project(pid: str, request: Request):
     return updated
 
 
-@app.delete("/api/projects/{pid}")
+@app.delete("/api/projects/{pid}", dependencies=[Depends(require_owner)])
 async def archive_project(pid: str):
     result = await db.archive_project(pid)
     if result is None:
@@ -362,7 +381,7 @@ async def archive_project(pid: str):
     return result
 
 
-@app.put("/api/projects/{pid}/restore")
+@app.put("/api/projects/{pid}/restore", dependencies=[Depends(require_owner)])
 async def restore_project(pid: str):
     result = await db.restore_project(pid)
     if result is None:
@@ -372,13 +391,13 @@ async def restore_project(pid: str):
 
 # ── Log endpoints ─────────────────────────────────────────────────
 
-@app.get("/api/projects/{pid}/logs")
+@app.get("/api/projects/{pid}/logs", dependencies=[Depends(require_viewer)])
 async def get_logs(pid: str):
     await _require_project(pid)
     return await db.get_logs(pid)
 
 
-@app.post("/api/projects/{pid}/logs")
+@app.post("/api/projects/{pid}/logs", dependencies=[Depends(require_owner)])
 async def add_log(pid: str, request: Request):
     body = await _json_object(request)
     await _require_project(pid)
@@ -388,13 +407,13 @@ async def add_log(pid: str, request: Request):
 
 # ── Notes endpoints ───────────────────────────────────────────────
 
-@app.get("/api/projects/{pid}/notes")
+@app.get("/api/projects/{pid}/notes", dependencies=[Depends(require_viewer)])
 async def get_notes(pid: str):
     await _require_project(pid)
     return await db.get_notes(pid)
 
 
-@app.put("/api/projects/{pid}/notes")
+@app.put("/api/projects/{pid}/notes", dependencies=[Depends(require_owner)])
 async def update_notes(pid: str, request: Request):
     body = await _json_object(request)
     await _require_project(pid)
@@ -408,14 +427,14 @@ async def update_notes(pid: str, request: Request):
 
 # ── Recap + Session ───────────────────────────────────────────────
 
-@app.get("/api/recap")
+@app.get("/api/recap", dependencies=[Depends(require_viewer)])
 async def recap():
     data = await db.get_recap()
     data["sessionMinutes"] = _elapsed_minutes()
     return data
 
 
-@app.get("/api/session")
+@app.get("/api/session", dependencies=[Depends(require_viewer)])
 async def session(request: Request):
     info: dict[str, Any] = {
         "startedAt": _server_started_at,  # changes on a restart or restore
@@ -439,19 +458,19 @@ async def session(request: Request):
 
 # ── Event endpoints ──────────────────────────────────────────────
 
-@app.get("/api/events")
+@app.get("/api/events", dependencies=[Depends(require_viewer)])
 async def list_events():
     return await db.list_events()
 
 
-@app.post("/api/events")
+@app.post("/api/events", dependencies=[Depends(require_owner)])
 async def create_event(request: Request):
     body = await _json_object(request)
     body.setdefault("date", date.today().isoformat())  # a new event is for today unless dated
     return await db.create_event(body)
 
 
-@app.put("/api/events/{eid}")
+@app.put("/api/events/{eid}", dependencies=[Depends(require_owner)])
 async def update_event(eid: str, request: Request):
     body = await _json_object(request)
     updated = await db.update_event(eid, body)
@@ -460,7 +479,7 @@ async def update_event(eid: str, request: Request):
     return updated
 
 
-@app.delete("/api/events/{eid}")
+@app.delete("/api/events/{eid}", dependencies=[Depends(require_owner)])
 async def delete_event(eid: str):
     deleted = await db.delete_event(eid)
     if deleted is None:
@@ -470,12 +489,14 @@ async def delete_event(eid: str):
 
 # ── Settings endpoints ───────────────────────────────────────────
 
-@app.get("/api/settings")
+# Settings are the owner's: display size, alignment, and the zip the weather
+# comes from. A viewer's board uses the built-in defaults.
+@app.get("/api/settings", dependencies=[Depends(require_owner)])
 async def get_settings():
     return await db.get_settings()
 
 
-@app.put("/api/settings")
+@app.put("/api/settings", dependencies=[Depends(require_owner)])
 async def update_settings(request: Request):
     body = await _json_object(request)
     return await db.update_settings(body)
@@ -490,11 +511,11 @@ async def join_board(token: str):
         return JSONResponse({"error": "Invalid or expired invite link"}, status_code=404)
     # Set cookie and redirect to board
     response = RedirectResponse(url="/", status_code=302)
-    response.set_cookie("viewer_token", token, httponly=True, max_age=30*86400, samesite="lax")
+    _set_viewer_cookie(response, token)
     return response
 
 
-@app.get("/api/me")
+@app.get("/api/me", dependencies=[Depends(require_viewer)])
 async def get_me(request: Request):
     role = getattr(request.state, "role", "viewer")
     email = getattr(request.state, "viewer_email", None)
