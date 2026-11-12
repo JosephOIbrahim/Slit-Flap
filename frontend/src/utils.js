@@ -67,7 +67,7 @@ export function formatDuration(mins) {
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
-export const FILTERS = ["ALL", "TODAY", "ACTIVE", "ROLLING", "BLOCKED", "REVIEW", "QUEUED", "SHIPPED"];
+export const FILTERS = ["ALL", "TODAY", "ACTIVE", "ROLLING", "BLOCKED", "REVIEW", "QUEUED", "SHIPPED", "ARCHIVED"];
 
 export function statusColor(s) {
   if (s === "ACTIVE" || s === "ROLLING") return ACCENT;

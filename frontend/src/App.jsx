@@ -39,6 +39,9 @@ export default function Departures() {
   const [sessionMins, setSessionMins] = useState(0);
   const [backup, setBackup] = useState({ failed: false, problem: null, last: null });
   const [version, setVersion] = useState("0.5");
+  const [archivedProjects, setArchivedProjects] = useState([]);
+  const [undo, setUndo] = useState(null);  // {id, name} while the 5s undo is offered
+  const undoTimer = useRef(null);
   const [settings, setSettings] = useState({ zip: "", fontSize: "104", alignment: "left" });
   const [weather, setWeather] = useState(null);
   const [zipEditing, setZipEditing] = useState(false);
@@ -233,12 +236,34 @@ export default function Departures() {
     setProjects(prev => prev.map(x => x.id === p.id ? { ...p, updatedAt: new Date().toISOString() } : x));
     api.put(`/projects/${p.id}`, p).catch(onSaveError);
   };
+  const loadArchived = () => api.get('/projects?archived=1').then(setArchivedProjects).catch(() => {});
+  useEffect(() => { if (filter === "ARCHIVED") loadArchived(); }, [filter]);
+  useEffect(() => () => clearTimeout(undoTimer.current), []);
+
+  const refreshBoard = () => Promise.all([
+    api.get('/projects').then(setProjects),
+    api.get('/projects?archived=1').then(setArchivedProjects),
+  ]).catch(onSaveError);
+
+  // Archive, not delete: the card, its notes and its log stay on disk.
   const remove = (id) => {
     if (holdEdit(() => remove(id))) return;
+    const name = (projects.find(p => p.id === id) || archivedProjects.find(p => p.id === id) || {}).name;
     setProjects(prev => prev.filter(x => x.id !== id));
     if (openId === id) setOpenId(null);
-    api.del(`/projects/${id}`).catch(onSaveError);
+    setUndo({ id, name: name || "Project" });
+    clearTimeout(undoTimer.current);
+    undoTimer.current = setTimeout(() => setUndo(null), 5000);
+    api.del(`/projects/${id}`).then(loadArchived).catch(onSaveError);
   };
+  const undoArchive = () => {
+    if (!undo) return;
+    clearTimeout(undoTimer.current);
+    api.put(`/projects/${undo.id}/restore`, {})
+      .then(() => { setUndo(null); return refreshBoard(); })
+      .catch(onSaveError);
+  };
+  const restore = (id) => api.put(`/projects/${id}/restore`, {}).then(refreshBoard).catch(onSaveError);
 
   // ─── Event CRUD ────────────────────────────────────────────
   const updateEvent = (ev) => {
@@ -293,7 +318,9 @@ export default function Departures() {
   const today = localDate();
   const filtered = isToday
     ? projects.filter((p) => p.status !== "SHIPPED" && p.todayTime && p.todayDate === today)
-    : projects.filter((p) => filter === "ALL" ? p.status !== "SHIPPED" : p.status === filter);
+    : filter === "ARCHIVED"
+      ? archivedProjects
+      : projects.filter((p) => filter === "ALL" ? p.status !== "SHIPPED" : p.status === filter);
   const visibleIds = filtered.map(p => p.id);
 
   // TODAY view: build unified timeline
@@ -358,7 +385,7 @@ export default function Departures() {
   );
 
   const cardProps = (p) => ({
-    project: p, onUpdate: update, onDelete: remove,
+    project: p, onUpdate: update, onDelete: remove, onRestore: restore,
     open: openId === p.id,
     onToggle: () => setOpenId(openId === p.id ? null : p.id),
     isNextUp: p.id === nextUpId,
@@ -662,6 +689,21 @@ export default function Departures() {
       <div style={{ padding: "24px 24px 48px", textAlign: "center" }}>
         <span style={sys("9px", G5, { letterSpacing: "0.2em" })}>DEPARTURES {version} · USD-COMPOSED · SOLARI PROTOCOL</span>
       </div>
+
+      {undo && (
+        <div role="status" style={{
+          position: "fixed", left: "24px", bottom: "24px", zIndex: 60,
+          display: "flex", alignItems: "center", gap: "14px",
+          background: G5, border: `1px solid ${G4}`, borderRadius: "4px",
+          padding: "10px 14px", boxShadow: "0 8px 24px #00000088",
+        }}>
+          <span style={sys("9px", G2, { letterSpacing: "0.1em" })}>ARCHIVED · {(undo.name || "").toUpperCase()}</span>
+          <button onClick={undoArchive} style={{
+            ...sys("9px", ACCENT), background: "transparent", border: `1px solid ${G4}`,
+            padding: "6px 10px", borderRadius: "4px", cursor: "pointer", letterSpacing: "0.1em",
+          }}>UNDO</button>
+        </div>
+      )}
     </div>
   );
 }

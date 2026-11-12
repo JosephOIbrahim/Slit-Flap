@@ -224,8 +224,9 @@ def _elapsed_minutes() -> int:
 # ── Project endpoints ─────────────────────────────────────────────
 
 @app.get("/api/projects")
-async def list_projects():
-    return await db.list_projects()
+async def list_projects(request: Request):
+    archived = request.query_params.get("archived", "").lower() in ("1", "true", "yes")
+    return await db.list_projects(archived=archived)
 
 
 @app.post("/api/projects")
@@ -256,8 +257,19 @@ async def update_project(pid: str, request: Request):
 
 
 @app.delete("/api/projects/{pid}")
-async def delete_project(pid: str):
-    return await db.delete_project(pid)
+async def archive_project(pid: str):
+    result = await db.archive_project(pid)
+    if result is None:
+        return JSONResponse({"error": "No such project"}, status_code=404)
+    return result
+
+
+@app.put("/api/projects/{pid}/restore")
+async def restore_project(pid: str):
+    result = await db.restore_project(pid)
+    if result is None:
+        return JSONResponse({"error": "No such project"}, status_code=404)
+    return result
 
 
 # ── Log endpoints ─────────────────────────────────────────────────

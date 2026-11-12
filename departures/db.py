@@ -112,9 +112,9 @@ PROJECTS = _Table(
     "projects",
     ["id", "name", "status", "track", "domain", "next_action",
      "deadline", "bg_color", "mile", "mile_total", "today_time", "today_date",
-     "sort_order", "last_touched", "created_at", "updated_at"],
+     "archived_at", "sort_order", "last_touched", "created_at", "updated_at"],
     {"next_action": "next", "bg_color": "bgColor", "mile_total": "of",
-     "today_time": "todayTime", "today_date": "todayDate", "sort_order": "sortOrder",
+     "today_time": "todayTime", "today_date": "todayDate", "archived_at": "archivedAt", "sort_order": "sortOrder",
      "last_touched": "lastTouched", "created_at": "createdAt", "updated_at": "updatedAt"},
 )
 
@@ -142,6 +142,7 @@ CREATE TABLE IF NOT EXISTS projects (
     mile_total INTEGER DEFAULT 0,
     today_time TEXT DEFAULT '',
     today_date TEXT DEFAULT '',
+    archived_at TEXT DEFAULT '',
     sort_order INTEGER DEFAULT 0,
     last_touched TEXT,
     created_at TEXT,
@@ -967,10 +968,18 @@ async def _add_event_date(db) -> None:
     await db.execute("UPDATE events SET date = date('now', 'localtime') WHERE date IS NULL OR date = ''")
 
 
+async def _add_archived_at(db) -> None:
+    """Archive instead of delete: archived projects stay on disk, hidden."""
+    cols = {row[1] for row in await (await db.execute("PRAGMA table_info(projects)")).fetchall()}
+    if "archived_at" not in cols:
+        await db.execute("ALTER TABLE projects ADD COLUMN archived_at TEXT DEFAULT ''")
+
+
 _MIGRATIONS = [
     (1, "projects.sort_order", _add_sort_order),
     (2, "projects.today_date", _add_today_date),
     (3, "events.date", _add_event_date),
+    (4, "projects.archived_at", _add_archived_at),
 ]
 SCHEMA_VERSION = _MIGRATIONS[-1][0]
 
@@ -1064,10 +1073,13 @@ async def close_open_sessions(ended_at: str) -> None:
 
 # ── Projects ──────────────────────────────────────────────────────
 
-async def list_projects() -> list[dict]:
-    """Return all projects with logs attached, camelCase keys."""
+async def list_projects(archived: bool = False) -> list[dict]:
+    """Projects with logs attached, camelCase keys. Archived ones are hidden
+    unless asked for: nothing is deleted any more."""
     async with _db() as db:
-        cursor = await db.execute("SELECT * FROM projects ORDER BY sort_order, track, name")
+        where = "archived_at <> ''" if archived else "(archived_at IS NULL OR archived_at = '')"
+        cursor = await db.execute(
+            f"SELECT * FROM projects WHERE {where} ORDER BY sort_order, track, name")
         rows = await cursor.fetchall()
 
         log_cursor = await db.execute(
@@ -1184,12 +1196,22 @@ async def update_project(pid: str, data: dict) -> dict | None:
         return {"id": pid, "updated": True} if changed else None
 
 
-async def delete_project(pid: str) -> dict:
-    """Delete project; foreign key cascade handles logs and notes."""
+async def archive_project(pid: str) -> dict | None:
+    """Hide a project without deleting it: notes and logs stay attached."""
     async with _db() as db:
-        await db.execute("DELETE FROM projects WHERE id = ?", (pid,))
+        await db.execute("UPDATE projects SET archived_at = ? WHERE id = ?", (_now(), pid))
+        changed = (await (await db.execute("SELECT changes()")).fetchone())[0]
         await db.commit()
-        return {"id": pid, "deleted": True}
+        return {"id": pid, "archived": True} if changed else None
+
+
+async def restore_project(pid: str) -> dict | None:
+    """Bring an archived project back, notes and logs intact."""
+    async with _db() as db:
+        await db.execute("UPDATE projects SET archived_at = '' WHERE id = ?", (pid,))
+        changed = (await (await db.execute("SELECT changes()")).fetchone())[0]
+        await db.commit()
+        return {"id": pid, "archived": False} if changed else None
 
 
 # ── Logs ──────────────────────────────────────────────────────────

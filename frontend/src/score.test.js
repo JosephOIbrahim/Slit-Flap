@@ -9,6 +9,10 @@ test("REVIEW is a filter of its own", () => {
   assert.ok(FILTERS.includes("REVIEW"));
 });
 
+test("ARCHIVED has a filter of its own", () => {
+  assert.ok(FILTERS.includes("ARCHIVED"));
+});
+
 test("REVIEW ranks as work waiting on you", () => {
   assert.ok(scoreProject(p("REVIEW")) > scoreProject(p("BLOCKED")));
   assert.ok(scoreProject(p("REVIEW")) < scoreProject(p("ACTIVE")));

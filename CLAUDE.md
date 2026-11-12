@@ -177,10 +177,12 @@ CREATE TABLE sessions (
 - `server.py` — FastAPI with these endpoints:
 
 ```
-GET    /api/projects              → List all projects
+GET    /api/projects              → List active projects (?archived=1 for archived)
 POST   /api/projects              → Create project
+PUT    /api/projects/order        → Reorder a visible list (ids, one transaction)
 PUT    /api/projects/{id}         → Update project
-DELETE /api/projects/{id}         → Delete project
+DELETE /api/projects/{id}         → Archive project (hidden, nothing deleted)
+PUT    /api/projects/{id}/restore → Restore an archived project
 
 GET    /api/projects/{id}/logs    → Get project logs
 POST   /api/projects/{id}/logs    → Add log entry

@@ -21,7 +21,7 @@ function Progress({ mile, of: total }) {
 
 // ─── EDIT PANEL ──────────────────────────────────────────────
 
-function EditPanel({ project, onUpdate, onDelete }) {
+function EditPanel({ project, onUpdate, onDelete, onRestore }) {
   const u = (k, v) => onUpdate({ ...project, [k]: v });
   return (
     <div style={{ padding: "18px 24px 18px", borderTop: `1px solid ${G4}`, background: G6 }} onClick={(e) => e.stopPropagation()}>
@@ -73,11 +73,11 @@ function EditPanel({ project, onUpdate, onDelete }) {
       </div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <span style={sys("9px", G4)}>/{project.id} · {project.history.length} transitions</span>
-        <button onClick={() => onDelete(project.id)}
+        <button onClick={() => (project.archivedAt ? onRestore(project.id) : onDelete(project.id))}
           style={{ ...sys("9px", G3), background: "transparent", border: `1px solid ${G4}`, padding: "8px 12px", cursor: "pointer", borderRadius: "4px" }}
-          onMouseEnter={(e) => { e.currentTarget.style.borderColor = RED; e.currentTarget.style.color = RED; }}
+          onMouseEnter={(e) => { e.currentTarget.style.borderColor = project.archivedAt ? ACCENT : RED; e.currentTarget.style.color = project.archivedAt ? ACCENT : RED; }}
           onMouseLeave={(e) => { e.currentTarget.style.borderColor = G4; e.currentTarget.style.color = G3; }}>
-          ARCHIVE
+          {project.archivedAt ? "RESTORE" : "ARCHIVE"}
         </button>
       </div>
     </div>
@@ -204,7 +204,7 @@ function NotesBack({ project, active, onFlip, readOnly }) {
 
 // ─── PROJECT CARD (TIER 1 — SHOUT) ───────────────────────────
 
-export function ProjectCard({ project, onUpdate, onDelete, open, onToggle, showTime, isNextUp, flapSize, flapAlign, readOnly }) {
+export function ProjectCard({ project, onUpdate, onDelete, onRestore, open, onToggle, showTime, isNextUp, flapSize, flapAlign, readOnly }) {
   const shipped = project.status === "SHIPPED";
   const [flipping, setFlipping] = useState(false);
   const [flipped, setFlipped] = useState(false);
@@ -315,7 +315,7 @@ export function ProjectCard({ project, onUpdate, onDelete, open, onToggle, showT
           {/* Edit panel + log */}
           {open && (
             <>
-              {!readOnly && <EditPanel project={project} onUpdate={onUpdate} onDelete={onDelete} />}
+              {!readOnly && <EditPanel project={project} onUpdate={onUpdate} onDelete={onDelete} onRestore={onRestore} />}
               <LogPanel log={project.log || []} onAdd={addLogEntry} readOnly={readOnly} />
             </>
           )}
