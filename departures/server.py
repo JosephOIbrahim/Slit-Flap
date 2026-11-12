@@ -8,7 +8,7 @@ import re
 import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any
@@ -25,7 +25,24 @@ DIST_DIR = Path(__file__).parent / "frontend" / "dist"
 
 # ── Session tracking ──────────────────────────────────────────────
 
-_session_started_at: str = ""
+_server_started_at: str = ""
+SESSION_GAP_MINUTES = 45  # after this long without a request, the next one starts a new session
+
+
+@dataclass
+class _Session:
+    """The owner's current stretch of work (not the server's uptime)."""
+    id: int | None = None
+    started_at: datetime | None = None
+    last_activity: datetime | None = None
+
+
+_session = _Session()
+_session_lock = asyncio.Lock()
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
 
 # ── Daily backup ──────────────────────────────────────────────────
 
@@ -90,10 +107,11 @@ async def _daily_backup() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _session_started_at
+    global _server_started_at
     await _daily_backup()  # before init, so it captures exactly what's on disk
     await db.init_db()
-    _session_started_at = datetime.now(timezone.utc).isoformat()
+    _server_started_at = _now().isoformat()
+    await db.close_open_sessions(_server_started_at)  # a crash's session ends at boot
     yield
 
 
@@ -115,6 +133,27 @@ async def daily_backup_middleware(request: Request, call_next):
     # network must not be able to choose when the day's backup is taken.
     if getattr(request.state, "role", None):
         await _daily_backup()
+    return await call_next(request)
+
+
+# ── Session activity middleware (after auth: only the owner) ──────
+
+async def _touch_session() -> None:
+    now = _now()
+    async with _session_lock:
+        if (_session.started_at is None or _session.last_activity is None
+                or now - _session.last_activity >= timedelta(minutes=SESSION_GAP_MINUTES)):
+            _session.id = await db.start_session(now.isoformat())
+            _session.started_at = now
+        _session.last_activity = now
+
+
+@app.middleware("http")
+async def session_middleware(request: Request, call_next):
+    # The 60-second /api/session poll is not activity; a page load is.
+    polling = request.method == "GET" and request.scope["path"] == "/api/session"
+    if getattr(request.state, "role", None) == "owner" and not polling:
+        await _touch_session()
     return await call_next(request)
 
 
@@ -177,11 +216,9 @@ def require_owner(request: Request) -> None:
 # ── Helper ────────────────────────────────────────────────────────
 
 def _elapsed_minutes() -> int:
-    if not _session_started_at:
+    if _session.started_at is None:
         return 0
-    started = datetime.fromisoformat(_session_started_at)
-    now = datetime.now(timezone.utc)
-    return math.floor((now - started).total_seconds() / 60)
+    return math.floor((_now() - _session.started_at).total_seconds() / 60)
 
 
 # ── Project endpoints ─────────────────────────────────────────────
@@ -258,7 +295,8 @@ async def recap():
 @app.get("/api/session")
 async def session(request: Request):
     info: dict[str, Any] = {
-        "startedAt": _session_started_at,
+        "startedAt": _server_started_at,  # changes on a restart or restore
+        "sessionStartedAt": _session.started_at.isoformat() if _session.started_at else None,
         "elapsedMinutes": _elapsed_minutes(),
         "version": __version__,
     }

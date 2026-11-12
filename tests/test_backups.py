@@ -1183,3 +1183,12 @@ def test_counts_fall_back_without_touching_the_board(board, monkeypatch):
 
     assert counts["projects"] == 16  # the main file's count; the -wal is left alone
     assert (db.DB_PATH.read_bytes(), wal.read_bytes()) == files_before  # board untouched
+
+
+def test_a_work_session_does_not_count_as_a_board_change(board):
+    # Starting a session writes a row to `sessions`; that's bookkeeping, not
+    # content, so a quiet day is still skipped.
+    start_board()
+    asyncio.run(db.start_session("2026-11-12T09:00:00+00:00"))
+    tomorrow = date.today() + timedelta(days=1)
+    assert db.backup_daily(tomorrow) is None

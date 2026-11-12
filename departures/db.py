@@ -450,6 +450,7 @@ def _snapshot(dest: Path, keep=None, source: Path | None = None) -> Path | None:
 # viewer's visit updates last_seen, and counting that as a change would make
 # every day with a visitor look changed, so quiet days would never be skipped.
 _NOT_CONTENT = {"viewers": {"last_seen"}}
+_NOT_CONTENT_TABLES = {"sessions", "sqlite_sequence"}  # counters, not board content
 
 
 def _fingerprint(path: Path) -> str | None:
@@ -466,7 +467,7 @@ def _fingerprint(path: Path) -> str | None:
             for entry in entries:
                 digest.update(repr(entry).encode() + bytes([10]))
                 kind, name = entry[0], entry[1]
-                if kind == "table":
+                if kind == "table" and name not in _NOT_CONTENT_TABLES:
                     skip = _NOT_CONTENT.get(name, set())
                     cols = [c[1] for c in conn.execute(f'PRAGMA table_info("{name}")')
                             if c[1] not in skip]
@@ -1016,6 +1017,31 @@ async def seed_db() -> Path | None:
             raise BackupTimeout(f"the board stayed locked for {BACKUP_TIME_LIMIT:g}s") from exc
         raise
     return backup
+
+
+# ── Sessions ─────────────────────────────────────────────────────
+#
+# A session is a stretch of work, not the life of the server: the board
+# starts one on the first owner interaction after a gap, and closes the
+# previous one. The pulse in the header reads the current session.
+
+async def start_session(started_at: str) -> int:
+    """Close any session still open, then start one. Returns its id."""
+    async with _db() as db:
+        await db.execute("UPDATE sessions SET ended_at = ? WHERE ended_at IS NULL", (started_at,))
+        cursor = await db.execute(
+            "INSERT INTO sessions (started_at, projects_touched, summary) VALUES (?, '[]', '')",
+            (started_at,),
+        )
+        await db.commit()
+        return cursor.lastrowid
+
+
+async def close_open_sessions(ended_at: str) -> None:
+    """Close sessions a crash left open (called at server start)."""
+    async with _db() as db:
+        await db.execute("UPDATE sessions SET ended_at = ? WHERE ended_at IS NULL", (ended_at,))
+        await db.commit()
 
 
 # ── Projects ──────────────────────────────────────────────────────

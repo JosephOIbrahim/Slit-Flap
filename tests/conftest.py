@@ -37,6 +37,7 @@ def board(tmp_path, monkeypatch):
     monkeypatch.setattr(db, "DB_DIR", home)
     monkeypatch.setattr(db, "DB_PATH", home / "departures.db")
     monkeypatch.setattr(server, "_backups", server._Backups())  # as if freshly started
+    monkeypatch.setattr(server, "_session", server._Session())  # no session yet
 
     app_dir = tmp_path / "app"
     dist = app_dir / "dist"
