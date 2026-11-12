@@ -14,7 +14,7 @@ import { useState, useEffect, useRef } from "react";
 
 import { ACCENT, WHITE, WHISPER, BG, RED, RISK, DISPLAY, MONO, G2, G3, G4, G5, G6, sys, whisper, sentence, FONT_SIZES } from "./theme";
 import { api, saveState, startSaveQueue } from "./api";
-import { changedFields } from "./projectFields";
+import { changedFields, flushPendingSaves } from "./projectFields";
 import { isPhoneWidth, flapSizeFor } from "./layout";
 import { sessionColor, formatDuration, timeToMinutes, fetchWeather, localDate, nextHalfHour, FILTERS, nextUpProject, startHereText, filterCounts, visibleProjects, groupByTrack } from "./utils";
 import { ProjectCard } from "./components/ProjectCard";
@@ -248,13 +248,15 @@ export default function Departures() {
   };
   // Saves are field-level and debounced: typing in one field sends that
   // field, not the whole card, and rapid keystrokes become one request.
-  const enqueueSave = (id, patch) => {
+  const enqueueSave = (id, patch, { keepalive = false } = {}) => {
     const previous = saveChains.current.get(id) || Promise.resolve();
     const next = previous.then(() => {
       const body = { ...patch };
       const stamp = saveStamps.current.get(id);
       if (stamp) body.updatedAt = stamp;
-      return api.put(`/projects/${id}`, body);
+      return keepalive
+        ? api.putKeepalive(`/projects/${id}`, body)
+        : api.put(`/projects/${id}`, body);
     }).then((res) => {
       if (res && res.updatedAt) {
         saveStamps.current.set(id, res.updatedAt);
@@ -273,6 +275,18 @@ export default function Departures() {
     }, 400);
     pendingSaves.current.set(id, entry);
   };
+
+  useEffect(() => {
+    const flush = () => flushPendingSaves(pendingSaves.current, enqueueSave);
+    const onVisibility = () => { if (document.visibilityState === "hidden") flush(); };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, []);
+
   const update = (p) => {
     if (holdEdit((fresh) => {
       // Replay only what the page changed, onto the refreshed row, so a

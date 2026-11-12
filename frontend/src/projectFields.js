@@ -9,3 +9,14 @@ export function changedFields(before, after) {
   });
   return out;
 }
+
+// A hidden page may never run the 400ms debounce timers. Flush the actual
+// merged patches, not a stale project snapshot, and let each request outlive
+// the page. Deletes happen before sending so a timer callback cannot resend.
+export function flushPendingSaves(pending, send) {
+  for (const [id, entry] of [...pending]) {
+    clearTimeout(entry.timer);
+    pending.delete(id);
+    send(id, entry.patch, { keepalive: true });
+  }
+}
