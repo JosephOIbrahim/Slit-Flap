@@ -1,6 +1,6 @@
-import { ACCENT, RED, G3, G4 } from "./theme";
+import { ACCENT, RED, G1, G3, G4 } from "./theme.js";
 
-export { localDate, nextHalfHour } from "./time";
+export { localDate, nextHalfHour } from "./time.js";
 
 // ─── DEPARTURE STATUS (deadline → board language) ────────────
 
@@ -26,6 +26,7 @@ export function scoreProject(p) {
   let score = 0;
   if (p.todayTime) score += 100;
   if (p.status === "ACTIVE") score += 50;
+  if (p.status === "REVIEW") score += 45;  // finished and waiting on you
   if (p.status === "ROLLING") score += 40;
   if (p.status === "BLOCKED") score += 5;
   if (p.track === "01") score += 30;
@@ -66,9 +67,12 @@ export function formatDuration(mins) {
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
+export const FILTERS = ["ALL", "TODAY", "ACTIVE", "ROLLING", "BLOCKED", "REVIEW", "QUEUED", "SHIPPED"];
+
 export function statusColor(s) {
   if (s === "ACTIVE" || s === "ROLLING") return ACCENT;
   if (s === "BLOCKED") return RED;
+  if (s === "REVIEW") return G1;  // readable, quieter than amber
   if (s === "SHIPPED") return G3;
   return G4;
 }

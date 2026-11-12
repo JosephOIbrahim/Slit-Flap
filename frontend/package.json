@@ -4,7 +4,7 @@
   "version": "0.5.4",
   "type": "module",
   "scripts": {
-    "test": "node --test src/time.test.js",
+    "test": "node --test src/time.test.js src/score.test.js",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview"

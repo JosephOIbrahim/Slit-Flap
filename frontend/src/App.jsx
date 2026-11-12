@@ -14,7 +14,7 @@ import { useState, useEffect, useRef } from "react";
 
 import { ACCENT, WHITE, BG, RISK, DISPLAY, MONO, G1, G2, G3, G4, G5, G6, sys, FONT_SIZES } from "./theme";
 import { api } from "./api";
-import { scoreProject, sessionColor, formatDuration, timeToMinutes, fetchWeather, localDate, nextHalfHour } from "./utils";
+import { scoreProject, sessionColor, formatDuration, timeToMinutes, fetchWeather, localDate, nextHalfHour, FILTERS } from "./utils";
 import { ProjectCard } from "./components/ProjectCard";
 import { EventRow, EmailRow, NowLine, SectionLabel } from "./components/Rows";
 import { RecapPanel, SharePanel } from "./components/Modals";
@@ -351,7 +351,7 @@ export default function Departures() {
   })();
 
   const intervals = [0.06, 0.12, 0.25, 0.5, 1.0];
-  const filters = ["ALL", "TODAY", "ACTIVE", "ROLLING", "BLOCKED", "QUEUED", "SHIPPED"];
+  const filters = FILTERS;
 
   if (!ready) return (
     <div style={{ background: BG, color: G4, height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: DISPLAY, fontSize: "14px", letterSpacing: "0.2em", textRendering: "optimizeLegibility" }}>LOADING</div>
