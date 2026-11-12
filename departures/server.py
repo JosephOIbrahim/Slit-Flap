@@ -5,6 +5,7 @@ import logging
 import math
 import os
 import re
+import socket
 import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -227,6 +228,60 @@ async def auth_middleware(request: Request, call_next):
 
     # For non-API paths from remote without auth
     return JSONResponse({"error": "Unauthorized. You need an invite link to view this board."}, status_code=401)
+
+
+# ── Host allowlist ────────────────────────────────────────────────
+#
+# DNS rebinding: an attacker's domain re-resolves to 127.0.0.1, so their
+# page's requests reach this board from this machine and would otherwise
+# count as the owner's. Only names that actually mean this machine are
+# accepted: localhost, the loopback addresses, and the LAN address the CLI
+# prints in share mode. Registered after the auth middleware, so it runs
+# before every other check.
+
+_TRUSTED_HOSTS = {"localhost", "127.0.0.1", "::1", "[::1]"}
+TRUSTED_HOSTS_EXTRA: set[str] = set()  # other names for this machine (tests: the LAN address)
+_lan_ip: str | None = None
+_lan_ip_found = False
+
+
+def _this_machines_lan_ip() -> str | None:
+    """The address a phone on the same Wi-Fi reaches this PC at, or None."""
+    global _lan_ip, _lan_ip_found
+    if not _lan_ip_found:
+        _lan_ip_found = True
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+                sock.connect(("8.8.8.8", 80))  # no packet sent; picks the route
+                _lan_ip = sock.getsockname()[0]
+        except OSError:
+            _lan_ip = None
+    return _lan_ip
+
+
+def trusted_hosts() -> set[str]:
+    hosts = set(_TRUSTED_HOSTS) | TRUSTED_HOSTS_EXTRA
+    lan = _this_machines_lan_ip()
+    if lan:
+        hosts.add(lan)
+    return hosts
+
+
+def host_name(host_header: str) -> str:
+    """'localhost:4040' -> 'localhost'; '[::1]:4040' -> '[::1]'."""
+    host = (host_header or "").strip().lower()
+    if host.startswith("["):
+        end = host.find("]")
+        return host[: end + 1] if end != -1 else host
+    return host.rsplit(":", 1)[0] if ":" in host else host
+
+
+@app.middleware("http")
+async def require_trusted_host(request: Request, call_next):
+    if host_name(request.headers.get("host", "")) not in trusted_hosts():
+        return JSONResponse(
+            {"error": "This board only answers to its own address."}, status_code=400)
+    return await call_next(request)
 
 
 def require_owner(request: Request) -> None:

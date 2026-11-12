@@ -39,6 +39,10 @@ def board(tmp_path, monkeypatch):
     monkeypatch.setattr(server, "_backups", server._Backups())  # as if freshly started
     monkeypatch.setattr(server, "_session", server._Session())  # no session yet
 
+    # Share mode's address: the CLI prints the machine's LAN IP, and every
+    # client in these tests pretends that is 192.168.1.10.
+    monkeypatch.setattr(server, "TRUSTED_HOSTS_EXTRA", {"192.168.1.10"})
+
     app_dir = tmp_path / "app"
     dist = app_dir / "dist"
     (dist / "assets").mkdir(parents=True)
