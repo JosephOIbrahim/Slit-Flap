@@ -14,7 +14,7 @@ import { useState, useEffect, useRef } from "react";
 
 import { ACCENT, WHITE, BG, RISK, DISPLAY, MONO, G1, G2, G3, G4, G5, G6, sys, FONT_SIZES } from "./theme";
 import { api } from "./api";
-import { scoreProject, sessionColor, formatDuration, timeToMinutes, fetchWeather, localDate } from "./utils";
+import { scoreProject, sessionColor, formatDuration, timeToMinutes, fetchWeather, localDate, nextHalfHour } from "./utils";
 import { ProjectCard } from "./components/ProjectCard";
 import { EventRow, EmailRow, NowLine, SectionLabel } from "./components/Rows";
 import { RecapPanel, SharePanel } from "./components/Modals";
@@ -209,7 +209,11 @@ export default function Departures() {
   // ─── Project CRUD ──────────────────────────────────────────
   const add = () => {
     if (holdEdit(() => add())) return;
-    api.post('/projects', { name: 'New Project', status: 'QUEUED', track: '03', domain: 'AI' })
+    const fresh = { name: 'New Project', status: 'QUEUED', track: '03', domain: 'AI' };
+    // In TODAY, a new card without a block is invisible: block it at the
+    // next half hour so the card you just made is the card you can act on.
+    if (isToday) Object.assign(fresh, { todayTime: nextHalfHour(), todayDate: localDate() });
+    api.post('/projects', fresh)
       .then(({ id }) => {
         api.get('/projects').then(data => { setProjects(data); setOpenId(id); }).catch(() => {});
       })

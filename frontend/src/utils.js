@@ -1,5 +1,7 @@
 import { ACCENT, RED, G3, G4 } from "./theme";
 
+export { localDate, nextHalfHour } from "./time";
+
 // ─── DEPARTURE STATUS (deadline → board language) ────────────
 
 const MS_DAY = 86400000;
@@ -48,13 +50,6 @@ export function relTime(iso) {
   const days = Math.floor(hrs / 24);
   if (days === 1) return "1d ago";
   return `${days}d ago`;
-}
-
-// ─── LOCAL DATE ──────────────────────────────────────────────
-// The board's day is the owner's day, not UTC's.
-export function localDate(d = new Date()) {
-  const p = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
 // ─── SESSION PULSE ───────────────────────────────────────────
