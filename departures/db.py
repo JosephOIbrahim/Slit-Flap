@@ -1228,8 +1228,8 @@ async def update_project(pid: str, data: dict) -> dict | None:
     across a restore can't be reported as saved when nothing was written.
 
     A whole-project save carries the updatedAt the page loaded. If that's
-    older than the row now, the page is behind (another save, or a restore):
-    StaleUpdate, so its old values don't land over newer ones."""
+    different from the row now, the page is stale (another save, or a restore):
+    StaleUpdate, so its old values don't land over the restored board."""
     async with _db() as db:
         await db.execute("BEGIN IMMEDIATE")  # the compare and the write see one board
         cursor = await db.execute(
@@ -1239,7 +1239,7 @@ async def update_project(pid: str, data: dict) -> dict | None:
             await db.rollback()
             return None
         sent, stored = _stamp(data.get("updatedAt")), _stamp(row["updated_at"])
-        if sent is not None and stored is not None and sent < stored:
+        if sent is not None and stored is not None and sent != stored:
             await db.rollback()
             raise StaleUpdate(
                 "This page is showing an older version of the project than the board "

@@ -1,6 +1,12 @@
 """Saves must not be reported as saved when nothing was written."""
 
+import asyncio
 import time
+from datetime import date
+
+import pytest
+
+from departures import db
 
 
 def test_a_save_to_a_project_that_no_longer_exists_is_a_404(owner):
@@ -33,6 +39,25 @@ def test_a_save_from_a_page_that_is_behind_the_board_is_refused(owner):
     caught_up = owner.put("/api/projects/tab", json={**loaded, "name": "Mine Again",
                                                     "updatedAt": current["updatedAt"]})
     assert caught_up.status_code == 200
+
+
+def test_a_tab_with_a_newer_timestamp_than_a_restored_row_is_refused(board):
+    asyncio.run(db.init_db())
+    asyncio.run(db.create_project({"id": "restored", "name": "Restored value"}))
+    backup = db.backup_daily(date.today())
+    asyncio.run(db.update_project("restored", {"name": "Current value"}))
+    tab = next(p for p in asyncio.run(db.list_projects()) if p["id"] == "restored")
+
+    staged, _ = db.stage_restore(backup)
+    db.install_restore(staged)
+    restored = next(p for p in asyncio.run(db.list_projects()) if p["id"] == "restored")
+    assert tab["updatedAt"] > restored["updatedAt"]
+
+    tab["name"] = "Old tab overwrite"
+    with pytest.raises(db.StaleUpdate):
+        asyncio.run(db.update_project("restored", tab))
+    current = next(p for p in asyncio.run(db.list_projects()) if p["id"] == "restored")
+    assert current["name"] == "Restored value"
 
 
 def test_a_note_saved_from_a_page_that_is_behind_is_refused(owner):
