@@ -20,8 +20,8 @@ function EventEditPanel({ event, projects, onUpdate, onDelete }) {
         <input value={draft.endTime} onChange={e => d("endTime", e.target.value)} onBlur={save} placeholder="END" style={inp} />
         <input value={draft.name} onChange={e => d("name", e.target.value)} onBlur={save} placeholder="Event name" style={inp} />
       </div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
-        <div style={{ display: "flex", gap: "8px", flex: 1 }}>
+      <div className="event-edit-actions" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
+        <div className="event-edit-fields" style={{ display: "flex", gap: "8px", flex: 1, minWidth: 0 }}>
           <input type="date" value={draft.date} onChange={e => d("date", e.target.value)} onBlur={save}
             title="The day this event happens" style={{ ...inp, width: "140px" }} />
           <select value={draft.linkedProject} onChange={e => { d("linkedProject", e.target.value); }}

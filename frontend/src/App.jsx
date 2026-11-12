@@ -165,6 +165,10 @@ export default function Departures() {
         .actions { left: 0 !important; right: 0 !important; bottom: 0 !important; padding: 8px 10px !important; gap: 4px !important; background: #111 !important; border-top: 1px solid #2a2a2a !important; justify-content: space-between !important; }
         .actions button { width: auto !important; height: 44px !important; border-radius: 4px !important; padding: 0 8px !important; font-size: 10px !important; letter-spacing: 0.08em !important; }
         .edit-grid { grid-template-columns: 1fr !important; }
+        .event-edit-actions { flex-wrap: wrap !important; align-items: stretch !important; }
+        .event-edit-fields { width: 100% !important; flex-wrap: wrap !important; min-width: 0 !important; }
+        .event-edit-fields input, .event-edit-fields select { flex: 1 1 120px !important; width: auto !important; min-width: 0 !important; max-width: 100% !important; }
+        .event-edit-actions > button { margin-left: auto !important; }
         .display-menu { left: 0 !important; right: auto !important; }
       }
     `;
