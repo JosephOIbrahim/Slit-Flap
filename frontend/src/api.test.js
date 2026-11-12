@@ -82,3 +82,16 @@ test("a newer PUT replaces the queued body for the same path", async () => {
   }
   assert.deepEqual(JSON.parse(sent.body), { name: "two" });
 });
+
+test("writes carry the board header", async () => {
+  _resetSaveState();
+  const realFetch = global.fetch;
+  let seen = null;
+  global.fetch = async (url, options) => { seen = options; return reply(200, {}); };
+  try {
+    await api.put("/projects/p", { name: "x" });
+  } finally {
+    global.fetch = realFetch;
+  }
+  assert.equal(seen.headers["X-Departures"], "1");
+});

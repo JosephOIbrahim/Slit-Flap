@@ -52,14 +52,16 @@ def board(tmp_path, monkeypatch):
 @pytest.fixture
 def owner(board):
     """The owner's browser, on this machine. Starts the app (startup runs)."""
-    with TestClient(server.app, client=OWNER, base_url="http://localhost:4040") as client:
+    with TestClient(server.app, client=OWNER, base_url="http://localhost:4040",
+                    headers={"X-Departures": "1"}) as client:
         yield client
 
 
 @pytest.fixture
 def neighbor(board):
     """Someone on the same network with no invite link."""
-    with TestClient(server.app, client=NEIGHBOR, base_url="http://192.168.1.10:4040") as client:
+    with TestClient(server.app, client=NEIGHBOR, base_url="http://192.168.1.10:4040",
+                    headers={"X-Departures": "1"}) as client:
         yield client
 
 
@@ -74,6 +76,7 @@ def make_viewer(owner):
             server.app,
             client=NEIGHBOR,
             base_url="http://192.168.1.10:4040",
+            headers={"X-Departures": "1"},
             cookies={"viewer_token": invite["token"]},
         )
         clients.append(client)

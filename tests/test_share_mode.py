@@ -6,9 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from departures import db
+from fastapi.testclient import TestClient
 
-from .conftest import SECRET
+from departures import db
+from departures import server
+
+from .conftest import OWNER, SECRET
 
 # Request paths that try to step out of the frontend folder toward
 # app/secret.txt (encoded so the HTTP client sends them untouched).
@@ -194,3 +197,14 @@ def test_other_local_pages_cannot_read_the_board(owner, origin):
     })
     assert "access-control-allow-origin" not in preflight.headers
     assert "access-control-allow-credentials" not in preflight.headers
+
+
+def test_a_write_without_the_board_header_is_refused(board):
+    # A page on another site can POST without reading the answer, but it
+    # cannot add a custom header without a preflight this board never grants.
+    client = TestClient(server.app, client=OWNER, base_url="http://localhost:4040")
+    with client:
+        r = client.post("/api/projects", json={"id": "csrf", "name": "CSRF"})
+        assert r.status_code == 403
+        assert "X-Departures" in r.text
+        assert client.get("/api/projects").status_code == 200  # reads are open

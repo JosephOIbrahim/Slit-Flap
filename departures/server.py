@@ -136,6 +136,28 @@ async def daily_backup_middleware(request: Request, call_next):
     return await call_next(request)
 
 
+# ── Cross-site write guard (after auth; before the route) ─────────
+#
+# A page on another site can make the owner's browser POST to this board
+# without reading the answer. Requiring a custom header makes the browser
+# preflight the request; a foreign origin's preflight gets no CORS grant,
+# so the write never happens. Same-origin board writes send it (api.js).
+
+WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+@app.middleware("http")
+async def require_board_header(request: Request, call_next):
+    if (request.method in WRITE_METHODS
+            and request.scope["path"].startswith("/api/")
+            and not request.headers.get("x-departures")):
+        return JSONResponse(
+            {"error": "This board only accepts writes from its own page (missing X-Departures)."},
+            status_code=403,
+        )
+    return await call_next(request)
+
+
 # ── Session activity middleware (after auth: only the owner) ──────
 
 async def _touch_session() -> None:

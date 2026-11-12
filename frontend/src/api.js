@@ -52,7 +52,7 @@ const request = async (method, path, body) => {
       ...(body === undefined
         ? {}
         : {
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", "X-Departures": "1" },
             body: JSON.stringify(body),
           }),
     });
@@ -118,7 +118,7 @@ export const api = {
   // For pagehide/visibilitychange: the request outlives the page.
   putKeepalive: (path, body) => fetch(`/api${path}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "X-Departures": "1" },
     body: JSON.stringify(body),
     keepalive: true,
   }).then(async (res) => {
