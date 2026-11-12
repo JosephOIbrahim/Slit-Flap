@@ -145,6 +145,7 @@ Steps so far:
 | 3 | `events.date`: add it; date existing events today |
 | 4 | `projects.archived_at`: add it |
 | 5 | `transitions`: create the status-history table |
+| 6 | `sessions`: add the columns the pulse writes (old boards predate `summary`) |
 
 An earlier 0.5.x board upgrades in place on first start, after that day's backup.
 

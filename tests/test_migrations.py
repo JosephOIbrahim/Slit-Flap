@@ -135,3 +135,19 @@ def test_demo_mode_is_true_only_for_the_seed_board(board):
     assert asyncio.run(db.get_settings())["demo"] is True
     asyncio.run(db.create_project({"id": "real", "name": "Real"}))
     assert asyncio.run(db.get_settings())["demo"] is False
+
+
+def test_an_old_sessions_table_gains_the_columns_the_pulse_writes(board):
+    asyncio.run(db.init_db())
+    with closing(sqlite3.connect(db.DB_PATH)) as conn:
+        conn.execute("ALTER TABLE sessions DROP COLUMN summary")
+        conn.execute("PRAGMA user_version = 5")
+        conn.commit()
+    asyncio.run(db.init_db())
+    with closing(sqlite3.connect(db.DB_PATH)) as conn:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(sessions)")}
+        version = conn.execute("PRAGMA user_version").fetchone()[0]
+    assert "summary" in cols
+    assert version == db.SCHEMA_VERSION
+    sid = asyncio.run(db.start_session("2026-11-12T10:00:00+00:00"))  # the pulse's insert
+    assert sid

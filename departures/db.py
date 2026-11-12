@@ -1002,12 +1002,23 @@ async def _add_transitions(db) -> None:
     )
 
 
+async def _add_session_columns(db) -> None:
+    """Old boards predate sessions.summary; the pulse writes it, so a board
+    upgraded without this column would fail every owner request."""
+    cols = {row[1] for row in await (await db.execute("PRAGMA table_info(sessions)")).fetchall()}
+    if "projects_touched" not in cols:
+        await db.execute("ALTER TABLE sessions ADD COLUMN projects_touched TEXT DEFAULT '[]'")
+    if "summary" not in cols:
+        await db.execute("ALTER TABLE sessions ADD COLUMN summary TEXT DEFAULT ''")
+
+
 _MIGRATIONS = [
     (1, "projects.sort_order", _add_sort_order),
     (2, "projects.today_date", _add_today_date),
     (3, "events.date", _add_event_date),
     (4, "projects.archived_at", _add_archived_at),
     (5, "transitions", _add_transitions),
+    (6, "sessions.columns", _add_session_columns),
 ]
 SCHEMA_VERSION = _MIGRATIONS[-1][0]
 
