@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 168" width="880" height="168" role="img" aria-label="DEPARTURES">
+  <rect x="8" y="12" width="144" height="144" rx="28" fill="#1a1a1a" stroke="#2f2f2f" stroke-width="3"/>
+  <text x="80" y="118" text-anchor="middle" font-family="Consolas, ui-monospace, monospace" font-size="104" font-weight="700" fill="#d4a012">D</text>
+  <rect x="24" y="82" width="112" height="6" fill="#1a1a1a"/>
+  <rect x="24" y="88" width="112" height="2" fill="#3a3a3a"/>
+  <text x="186" y="92" font-family="Consolas, ui-monospace, monospace" font-size="52" font-weight="700" letter-spacing="5" fill="#e8e4de">DEPARTURES</text>
+  <text x="188" y="126" font-family="Consolas, ui-monospace, monospace" font-size="14" letter-spacing="4" fill="#999999">SPLIT-FLAP PROJECT BOARD</text>
+</svg>

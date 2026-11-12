@@ -1,5 +1,5 @@
-"""The README's restore steps: the by-hand ones, done exactly as written,
-work on a board that crashed with changes still in its -wal."""
+"""The by-hand restore steps, done exactly as written, work on a board
+that crashed with changes still in its -wal."""
 
 import shutil
 from pathlib import Path
@@ -9,12 +9,14 @@ from departures import db
 from .test_backups import crash_while_writing, daily_backups, ids_in, start_board
 
 README = Path(__file__).resolve().parent.parent / "README.md"
+USING = Path(__file__).resolve().parent.parent / "docs" / "USING.md"
 
 
 def restore_section() -> str:
-    text = README.read_text(encoding="utf-8")
-    start = text.index("**Restoring a backup.**")
-    return text[start:text.index("\n---", start)]
+    """The by-hand restore steps live in docs/USING.md so the README stays short."""
+    text = USING.read_text(encoding="utf-8")
+    start = text.index("## Restore by hand")
+    return text[start:text.index(chr(10) + "## ", start + 1)]
 
 
 def test_the_steps_say_how_to_stop_find_and_move_everything():
