@@ -290,7 +290,28 @@ def require_owner(request: Request) -> None:
         raise HTTPException(status_code=403, detail="Owner only")
 
 
-# ── Helper ────────────────────────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────
+
+async def _json_object(request: Request) -> dict:
+    """The request body as a JSON object, or a 422 (never a 500).
+
+    `request.json()` raises on a malformed body, which FastAPI would turn
+    into a 500. A body that parses but isn't an object is just as unusable.
+    """
+    try:
+        body = await request.json()
+    except ValueError:  # includes json.JSONDecodeError and bad UTF-8
+        raise HTTPException(status_code=422, detail="Body must be valid JSON")
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=422, detail="Body must be a JSON object")
+    return body
+
+
+async def _require_project(pid: str) -> None:
+    """404 for a project id the board doesn't have, before writing anything."""
+    if not await db.project_exists(pid):
+        raise HTTPException(status_code=404, detail="No such project")
+
 
 def _elapsed_minutes() -> int:
     if _session.started_at is None:
@@ -308,13 +329,13 @@ async def list_projects(request: Request):
 
 @app.post("/api/projects")
 async def create_project(request: Request):
-    body = await request.json()
+    body = await _json_object(request)
     return await db.create_project(body)
 
 
 @app.put("/api/projects/order")
 async def reorder_projects(request: Request):
-    body = await request.json()
+    body = await _json_object(request)
     ids = body.get("ids")
     if not isinstance(ids, list) or not all(isinstance(i, str) for i in ids):
         return JSONResponse({"error": "ids must be a list of project ids"}, status_code=400)
@@ -323,7 +344,7 @@ async def reorder_projects(request: Request):
 
 @app.put("/api/projects/{pid}")
 async def update_project(pid: str, request: Request):
-    body = await request.json()
+    body = await _json_object(request)
     try:
         updated = await db.update_project(pid, body)
     except db.StaleUpdate as exc:
@@ -353,12 +374,14 @@ async def restore_project(pid: str):
 
 @app.get("/api/projects/{pid}/logs")
 async def get_logs(pid: str):
+    await _require_project(pid)
     return await db.get_logs(pid)
 
 
 @app.post("/api/projects/{pid}/logs")
 async def add_log(pid: str, request: Request):
-    body = await request.json()
+    body = await _json_object(request)
+    await _require_project(pid)
     text = body.get("text", "")
     return await db.add_log(pid, text)
 
@@ -367,12 +390,14 @@ async def add_log(pid: str, request: Request):
 
 @app.get("/api/projects/{pid}/notes")
 async def get_notes(pid: str):
+    await _require_project(pid)
     return await db.get_notes(pid)
 
 
 @app.put("/api/projects/{pid}/notes")
 async def update_notes(pid: str, request: Request):
-    body = await request.json()
+    body = await _json_object(request)
+    await _require_project(pid)
     content = body.get("content", "")
     updated = await db.update_notes(pid, content, body.get("updatedAt"))
     if updated is None:
@@ -421,20 +446,26 @@ async def list_events():
 
 @app.post("/api/events")
 async def create_event(request: Request):
-    body = await request.json()
+    body = await _json_object(request)
     body.setdefault("date", date.today().isoformat())  # a new event is for today unless dated
     return await db.create_event(body)
 
 
 @app.put("/api/events/{eid}")
 async def update_event(eid: str, request: Request):
-    body = await request.json()
-    return await db.update_event(eid, body)
+    body = await _json_object(request)
+    updated = await db.update_event(eid, body)
+    if updated is None:
+        return JSONResponse({"error": "No such event"}, status_code=404)
+    return updated
 
 
 @app.delete("/api/events/{eid}")
 async def delete_event(eid: str):
-    return await db.delete_event(eid)
+    deleted = await db.delete_event(eid)
+    if deleted is None:
+        return JSONResponse({"error": "No such event"}, status_code=404)
+    return deleted
 
 
 # ── Settings endpoints ───────────────────────────────────────────
@@ -446,7 +477,7 @@ async def get_settings():
 
 @app.put("/api/settings")
 async def update_settings(request: Request):
-    body = await request.json()
+    body = await _json_object(request)
     return await db.update_settings(body)
 
 
@@ -479,8 +510,8 @@ async def list_viewers():
 
 @app.post("/api/viewers", dependencies=[Depends(require_owner)])
 async def add_viewer(request: Request):
-    body = await request.json()
-    email = body.get("email", "").strip()
+    body = await _json_object(request)
+    email = str(body.get("email", "")).strip()
     if not email or "@" not in email:
         return JSONResponse({"error": "Valid email required"}, status_code=400)
     return await db.add_viewer(email)

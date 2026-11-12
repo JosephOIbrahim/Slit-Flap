@@ -1137,6 +1137,13 @@ async def list_projects(archived: bool = False) -> list[dict]:
         return projects
 
 
+async def project_exists(pid: str) -> bool:
+    """True if the board has this project (archived or not)."""
+    async with _db() as db:
+        row = await (await db.execute("SELECT 1 FROM projects WHERE id = ?", (pid,))).fetchone()
+        return row is not None
+
+
 async def create_project(data: dict) -> dict:
     """Create a project from camelCase frontend data. Returns {id}."""
     now = _now()
@@ -1390,20 +1397,23 @@ async def create_event(data: dict) -> dict:
         return EVENTS.row_out(row)
 
 
-async def update_event(eid: str, data: dict) -> dict:
-    """Partial update. Returns {id, updated: True}."""
+async def update_event(eid: str, data: dict) -> dict | None:
+    """Partial update. Returns {id, updated: True}, or None if no such event
+    (so a save for an event that's gone isn't reported as saved)."""
     async with _db() as db:
         await EVENTS.update(db, eid, data, touch=("updated_at",))
+        changed = (await (await db.execute("SELECT changes()")).fetchone())[0]
         await db.commit()
-        return {"id": eid, "updated": True}
+        return {"id": eid, "updated": True} if changed else None
 
 
-async def delete_event(eid: str) -> dict:
-    """Delete event. Returns {id, deleted: True}."""
+async def delete_event(eid: str) -> dict | None:
+    """Delete event. Returns {id, deleted: True}, or None if no such event."""
     async with _db() as db:
         await db.execute("DELETE FROM events WHERE id = ?", (eid,))
+        changed = (await (await db.execute("SELECT changes()")).fetchone())[0]
         await db.commit()
-        return {"id": eid, "deleted": True}
+        return {"id": eid, "deleted": True} if changed else None
 
 
 # ── Settings ──────────────────────────────────────────────────────
