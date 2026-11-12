@@ -234,6 +234,15 @@ async def create_project(request: Request):
     return await db.create_project(body)
 
 
+@app.put("/api/projects/order")
+async def reorder_projects(request: Request):
+    body = await request.json()
+    ids = body.get("ids")
+    if not isinstance(ids, list) or not all(isinstance(i, str) for i in ids):
+        return JSONResponse({"error": "ids must be a list of project ids"}, status_code=400)
+    return await db.reorder_projects(ids)
+
+
 @app.put("/api/projects/{pid}")
 async def update_project(pid: str, request: Request):
     body = await request.json()

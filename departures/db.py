@@ -1093,6 +1093,9 @@ async def create_project(data: dict) -> dict:
     now = _now()
     pid = data.get("id") or _new_id()
     async with _db() as db:
+        await db.execute("BEGIN IMMEDIATE")
+        row = await (await db.execute(
+            "SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order FROM projects")).fetchone()
         await PROJECTS.insert(db, {
             "id": pid,
             "name": data.get("name", "New Project"),
@@ -1105,12 +1108,35 @@ async def create_project(data: dict) -> dict:
             "mile": data.get("mile", 0),
             "mile_total": data.get("of", 0),
             "today_time": data.get("todayTime", ""),
+            "today_date": data.get("todayDate", ""),
+            "sort_order": data.get("sortOrder", row["next_order"]),
             "last_touched": now,
             "created_at": now,
             "updated_at": now,
         })
         await db.commit()
         return {"id": pid}
+
+
+async def reorder_projects(ids: list[str]) -> dict:
+    """Put the given project ids in this order, in one transaction.
+
+    They move among the slots they already occupy, so reordering a filtered
+    view (BLOCKED, say) doesn't push those cards past everything else."""
+    async with _db() as db:
+        await db.execute("BEGIN IMMEDIATE")
+        rows = await (await db.execute(
+            "SELECT id FROM projects ORDER BY sort_order, track, name")).fetchall()
+        order = [r["id"] for r in rows]
+        wanted = list(dict.fromkeys(pid for pid in ids if pid in set(order)))
+        slots = [i for i, pid in enumerate(order) if pid in set(wanted)]
+        new_order = order[:]
+        for slot, pid in zip(slots, wanted):
+            new_order[slot] = pid
+        for i, pid in enumerate(new_order):
+            await db.execute("UPDATE projects SET sort_order = ? WHERE id = ?", (i, pid))
+        await db.commit()
+        return {"order": new_order}
 
 
 class StaleUpdate(RuntimeError):

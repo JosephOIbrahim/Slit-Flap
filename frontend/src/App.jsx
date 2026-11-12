@@ -260,27 +260,29 @@ export default function Departures() {
   };
 
   // ─── Priority reorder ──────────────────────────────────────
-  const moveProject = (direction, list) => {
+  const moveProject = (direction, list, visibleIds) => {
     if (!openId) return;
-    if (!list && holdEdit((fresh) => moveProject(direction, fresh))) return;
+    if (!list && holdEdit((fresh) => moveProject(direction, fresh, visibleIds))) return;
     const items = list || projects;
-    const idx = items.findIndex(p => p.id === openId);
+    // Move within the list the owner is looking at, not the whole board.
+    const visible = visibleIds || items.map(p => p.id);
+    const idx = visible.indexOf(openId);
     if (idx === -1) return;
     const swapIdx = direction === "up" ? idx - 1 : idx + 1;
-    if (swapIdx < 0 || swapIdx >= items.length) return;
-    const a = items[idx];
-    const b = items[swapIdx];
-    // Use index-based ordering if sortOrders are equal or both 0
-    const orderA = (a.sortOrder !== b.sortOrder) ? a.sortOrder : idx;
-    const orderB = (a.sortOrder !== b.sortOrder) ? b.sortOrder : swapIdx;
-    // Optimistic: swap in local state immediately
+    if (swapIdx < 0 || swapIdx >= visible.length) return;
+    const newVisible = [...visible];
+    [newVisible[idx], newVisible[swapIdx]] = [newVisible[swapIdx], newVisible[idx]];
+    // Optimistic: fill the visible rows' own slots with the new order.
+    const visibleSet = new Set(visible);
+    const slots = [];
+    items.forEach((p, i) => { if (visibleSet.has(p.id)) slots.push(i); });
+    const byId = new Map(items.map(p => [p.id, p]));
     const newProjects = [...items];
-    newProjects[idx] = { ...b, sortOrder: orderA };
-    newProjects[swapIdx] = { ...a, sortOrder: orderB };
+    slots.forEach((slot, k) => { newProjects[slot] = byId.get(newVisible[k]); });
     setProjects(newProjects);
-    // Persist both
-    api.put(`/projects/${a.id}`, { sortOrder: orderB }).catch(onSaveError);
-    api.put(`/projects/${b.id}`, { sortOrder: orderA }).catch(onSaveError);
+    api.put('/projects/order', { ids: newVisible })
+      .then(() => api.get('/projects').then(setProjects))
+      .catch(onSaveError);
   };
 
   const isToday = filter === "TODAY";
@@ -292,6 +294,7 @@ export default function Departures() {
   const filtered = isToday
     ? projects.filter((p) => p.status !== "SHIPPED" && p.todayTime && p.todayDate === today)
     : projects.filter((p) => filter === "ALL" ? p.status !== "SHIPPED" : p.status === filter);
+  const visibleIds = filtered.map(p => p.id);
 
   // TODAY view: build unified timeline
   const todayTimeline = (() => {
@@ -602,7 +605,7 @@ export default function Departures() {
           REC
         </button>
         {!isViewer && (
-          <button onClick={() => moveProject("up")} title="Move up" style={{
+          <button onClick={() => moveProject("up", undefined, visibleIds)} title="Move up" style={{
             width: "44px", height: "44px", borderRadius: "50%",
             background: G5, border: openId ? `1px solid ${G4}` : "none",
             color: openId ? G2 : G4, fontFamily: MONO, fontSize: "14px", fontWeight: 400,
@@ -613,7 +616,7 @@ export default function Departures() {
             onMouseLeave={(e) => { e.currentTarget.style.borderColor = openId ? G4 : "transparent"; e.currentTarget.style.color = openId ? G2 : G4; }}>▲</button>
         )}
         {!isViewer && (
-          <button onClick={() => moveProject("down")} title="Move down" style={{
+          <button onClick={() => moveProject("down", undefined, visibleIds)} title="Move down" style={{
             width: "44px", height: "44px", borderRadius: "50%",
             background: G5, border: openId ? `1px solid ${G4}` : "none",
             color: openId ? G2 : G4, fontFamily: MONO, fontSize: "14px", fontWeight: 400,

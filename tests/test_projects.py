@@ -75,3 +75,15 @@ def test_a_new_event_is_for_today_unless_dated(owner):
 
     later = owner.post("/api/events", json={"time": "11:00", "name": "Review", "date": "2099-01-01"}).json()
     assert later["date"] == "2099-01-01"
+
+
+def test_the_order_endpoint_renumbers_in_one_call(owner):
+    for pid in ("a", "b", "c"):
+        owner.post("/api/projects", json={"id": pid, "name": pid.upper()})
+    r = owner.put("/api/projects/order", json={"ids": ["c", "a", "b"]})
+    assert r.status_code == 200
+    order = [p["id"] for p in owner.get("/api/projects").json()]
+    assert order[-3:] == ["c", "a", "b"]
+
+    bad = owner.put("/api/projects/order", json={"ids": "c"})
+    assert bad.status_code == 400
