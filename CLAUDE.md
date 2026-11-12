@@ -17,14 +17,15 @@ This is not a todo app. It's a **war room for a creative director running 16+ pr
 ## Quick Start (The Only Thing That Matters)
 
 ```bash
-git clone <repo-url> && cd departures
+git clone <repo-url> && cd Slit-Flap
 pip install -e .
+cd frontend && npm install && npm run build && cd ..
 departures
 ```
 
-Browser opens. Board loads. You're working.
+Browser opens on `http://localhost:4040`. Board loads. You're working.
 
-That's it. If it takes more than 3 commands, we failed.
+The frontend build is required from a git clone: `departures/frontend/dist/` is gitignored, so a fresh clone has no board until `npm run build`. The release wheel bundles the built frontend, so `pip install departures-<version>-py3-none-any.whl` then `departures` needs no Node.
 
 ---
 
@@ -67,8 +68,10 @@ departures/
 │   ├── package.json
 │   └── vite.config.js       ← Vite build → dist/
 │
-├── data/                    ← SQLite DB lives here (gitignored)
-│   └── departures.db
+├── ~/.departures/           ← the board's data folder (not in the repo)
+│   ├── departures.db        ← SQLite database
+│   ├── backups/             ← daily verified copies, newest 14 kept
+│   └── launcher.log         ← silent launcher's startup errors
 │
 └── stages/                  ← USD stage files (v2, gitignored)
     └── projects.usda
@@ -186,12 +189,28 @@ GET    /api/projects/{id}/notes   → Get flip-side notes
 PUT    /api/projects/{id}/notes   → Update flip-side notes
 
 GET    /api/recap                 → Daily recap (today's touched projects + session time)
-POST   /api/session/start         → Register session start
-PUT    /api/session/end           → Register session end
+
+GET    /api/events                → List calendar events
+POST   /api/events                → Create event
+PUT    /api/events/{id}           → Update event
+DELETE /api/events/{id}           → Delete event
+
+GET    /api/settings              → Board settings (zip, font size, alignment)
+PUT    /api/settings              → Update settings
+
+GET    /api/viewers               → List viewer invite links (owner only)
+POST   /api/viewers               → Create a viewer invite link (owner only)
+DELETE /api/viewers/{id}          → Revoke a viewer link (owner only)
+GET    /join/{token}              → Invite link: sets the viewer cookie, redirects to /
+GET    /api/me                    → Who this request is (owner or viewer)
+
+GET    /api/session               → Server start time, elapsed minutes, version,
+                                    backup health (owner only), clock warning (owner only)
 ```
 
-- Serve `frontend/dist/` as static files at `/`
-- CORS configured for local development (Vite dev server on :5173)
+- Serve the built frontend from `departures/frontend/dist/`, by exact file name only
+- No CORS: the board's page is same-origin, and the Vite dev server proxies `/api` (frontend/vite.config.js)
+- Sessions: `POST /api/session/start` and `PUT /api/session/end` were never built. The `sessions` table exists but is not written yet.
 - All timestamps ISO 8601
 - Seed data on first run if DB is empty (the 16 projects from the prototype)
 
@@ -244,11 +263,11 @@ PUT    /api/session/end           → Register session end
   ║ D ║ ║ E ║ ║ P ║ ║ A ║ ║ R ║ ║ T ║ ║ U ║ ║ R ║ ║ E ║ ║ S ║
   ╚═══╝ ╚═══╝ ╚═══╝ ╚═══╝ ╚═══╝ ╚═══╝ ╚═══╝ ╚═══╝ ╚═══╝ ╚═══╝
 
-  v0.4.0 · USD-Composed Project State · Solari Protocol
+  v0.5.4 · USD-Composed Project State · Solari Protocol
 
-  → Server:  http://localhost:8400
+  → Server:  http://localhost:4040
   → Board:   Opening in browser...
-  → Data:    ./data/departures.db
+  → Data:    ~/.departures/departures.db
   → Press Ctrl+C to stop
 """
 ```
@@ -256,7 +275,8 @@ PUT    /api/session/end           → Register session end
 - `__main__.py` — so `python -m departures` works
 - `pyproject.toml` — so `pip install -e .` creates `departures` command
 - Auto-open browser on start (webbrowser module)
-- Port: 8400 (default), configurable via `--port`
+- Port: 4040 (default), configurable via `--port`
+- Binds `127.0.0.1` by default; `--host 0.0.0.0` turns on share mode
 - `--no-browser` flag for headless/server use
 - `departures seed` — reset DB to seed data
 - `departures recap` — print today's recap to terminal (Solari-style)
@@ -332,12 +352,16 @@ These are v2. Don't touch them. Don't scaffold them. Don't even create empty fil
 - Google Calendar integration
 - Gmail / email integration  
 - Cognitive twin MCP connection
-- User authentication
-- Multi-user support
+- Accounts, passwords, or roles beyond owner and read-only viewer
+- Multi-user support (one owner; invited viewers are read-only guests)
 - Deployment / hosting
 - Electron wrapper
 - iOS/Android native
 - Real USD read/write (Phase 1 is SQLite only)
+
+**Shipped instead:** share mode. `departures --host 0.0.0.0` lets invited viewers open a read-only
+board through an invite link (`/join/<token>`). The owner can list, create and revoke links from
+their own machine only; viewers cannot. There are no accounts or passwords.
 
 ---
 
@@ -362,8 +386,8 @@ These are v2. Don't touch them. Don't scaffold them. Don't even create empty fil
 - **Python:** 3.11+ (3.12 if USD is needed later)
 - **Node:** 18+ (for Vite frontend build)
 - **OS:** Windows, macOS, Linux, WSL (must work on all — the user switches constantly)
-- **Port:** 8400 (default)
-- **Data dir:** `./data/` (created on first run)
+- **Port:** 4040 (default), `--port` to change
+- **Data dir:** `~/.departures/` (created on first run); `DEPARTURES_HOME` relocates it
 
 ---
 
