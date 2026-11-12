@@ -1,21 +1,67 @@
+import { useEffect, useId, useRef } from "react";
 import { DISPLAY, WHITE, WHISPER, RED, GREEN, G4, G5, sys, whisper, inp } from "../theme";
 import { relTime, statusColor, formatDuration } from "../utils";
 
 // ─── MODAL SHELL ─────────────────────────────────────────────
 
 function Modal({ title, onClose, children }) {
+  const panelRef = useRef(null);
+  const closeRef = useRef(null);
+  const onCloseRef = useRef(onClose);
+  const titleId = useId();
+  onCloseRef.current = onClose;
+
+  useEffect(() => {
+    const previousFocus = document.activeElement;
+    const panel = panelRef.current;
+    const focusable = () => [...panel.querySelectorAll(
+      'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])'
+    )];
+    (closeRef.current || focusable()[0] || panel).focus();
+
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const items = focusable();
+      if (!items.length) {
+        e.preventDefault();
+        panel.focus();
+        return;
+      }
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement;
+      if (e.shiftKey && (active === first || !panel.contains(active))) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && (active === last || !panel.contains(active))) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      if (previousFocus && previousFocus.isConnected) previousFocus.focus();
+    };
+  }, []);
+
   return (
     <div style={{
       position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 200,
       display: "flex", alignItems: "center", justifyContent: "center", padding: "24px",
     }} onClick={onClose}>
-      <div style={{
+      <div ref={panelRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} style={{
         background: G5, borderRadius: "4px", padding: "36px", maxWidth: "480px", width: "100%",
         border: `1px solid ${G4}`,
       }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "18px" }}>
-          <span style={{ fontFamily: DISPLAY, fontSize: "18px", color: WHITE, letterSpacing: "0.1em", textTransform: "uppercase", textRendering: "optimizeLegibility" }}>{title}</span>
-          <button onClick={onClose} style={{ background: "transparent", border: "none", color: WHISPER, fontSize: "18px", cursor: "pointer", padding: "8px", margin: "-8px" }}>×</button>
+          <span id={titleId} style={{ fontFamily: DISPLAY, fontSize: "18px", color: WHITE, letterSpacing: "0.1em", textTransform: "uppercase", textRendering: "optimizeLegibility" }}>{title}</span>
+          <button ref={closeRef} onClick={onClose} aria-label={`Close ${title}`} style={{ background: "transparent", border: "none", color: WHISPER, fontSize: "18px", cursor: "pointer", padding: "8px", margin: "-8px" }}>×</button>
         </div>
         {children}
       </div>

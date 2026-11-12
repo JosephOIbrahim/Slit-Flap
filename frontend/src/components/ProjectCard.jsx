@@ -333,6 +333,20 @@ export function ProjectCard({ project, onUpdate, onLog, onDelete, onRestore, ope
                 {dep && <span style={whisper({ color: dep.color, fontWeight: 600, letterSpacing: "0.08em" })}>{dep.label}</span>}
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleToggle(); }}
+                  aria-label={`Toggle ${project.name} details`}
+                  aria-expanded={open}
+                  title="Toggle project details"
+                  style={{
+                    background: "transparent", border: "none", fontFamily: MONO, fontSize: "13px",
+                    color: WHISPER, cursor: "pointer", padding: "8px 4px", margin: "-8px -4px",
+                    lineHeight: 1,
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.color = WHITE; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.color = WHISPER; }}>
+                  {open ? "▾" : "▸"}
+                </button>
                 <button onClick={(e) => { e.stopPropagation(); setFlipped(true); }} title="Flip to notes" style={{
                   background: "transparent", border: "none", fontFamily: MONO, fontSize: "11px",
                   color: WHISPER, cursor: "pointer", padding: "8px 4px", margin: "-8px -4px",

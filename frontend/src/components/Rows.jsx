@@ -65,6 +65,15 @@ export function EventRow({ event, projects = [], open, onToggle, onUpdate, onDel
         <div style={{ display: "flex", alignItems: "center", gap: "12px", flexShrink: 0 }}>
           {linked && <span style={whisper({ letterSpacing: "0.08em" })}>→ {linked}</span>}
           <span style={whisper({ letterSpacing: "0.06em" })}>{event.endTime || event.end}</span>
+          <button
+            onClick={(e) => { e.stopPropagation(); onToggle(); }}
+            aria-label={`Toggle ${event.name} details`}
+            aria-expanded={open}
+            title="Toggle event details"
+            style={{ background: "transparent", border: "none", color: WHISPER,
+                     fontSize: "13px", cursor: "pointer", padding: "4px", margin: "-4px" }}>
+            {open ? "▾" : "▸"}
+          </button>
         </div>
       </div>
       {open && !readOnly && <EventEditPanel event={event} projects={projects} onUpdate={onUpdate} onDelete={onDelete} />}
