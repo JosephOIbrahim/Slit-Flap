@@ -83,6 +83,49 @@ test("a newer PUT replaces the queued body for the same path", async () => {
   assert.deepEqual(JSON.parse(sent.body), { name: "two" });
 });
 
+test("queued project field patches merge without losing earlier fields", async () => {
+  _resetSaveState();
+  const realFetch = global.fetch;
+  global.fetch = async () => { throw new TypeError("offline"); };
+  try {
+    await assert.rejects(api.put("/projects/p", { name: "New name" }));
+    await assert.rejects(api.put("/projects/p", { next: "Ship the board" }));
+  } finally {
+    global.fetch = realFetch;
+  }
+  assert.equal(saveState.status().pending, 1);
+
+  let sent = null;
+  global.fetch = async (url, options) => { sent = options; return reply(200, {}); };
+  try {
+    await flushSaveQueue();
+  } finally {
+    global.fetch = realFetch;
+  }
+  assert.deepEqual(JSON.parse(sent.body), { name: "New name", next: "Ship the board" });
+});
+
+test("queued notes writes still replace the whole document", async () => {
+  _resetSaveState();
+  const realFetch = global.fetch;
+  global.fetch = async () => { throw new TypeError("offline"); };
+  try {
+    await assert.rejects(api.put("/projects/p/notes", { content: "first" }));
+    await assert.rejects(api.put("/projects/p/notes", { content: "second" }));
+  } finally {
+    global.fetch = realFetch;
+  }
+
+  let sent = null;
+  global.fetch = async (url, options) => { sent = options; return reply(200, {}); };
+  try {
+    await flushSaveQueue();
+  } finally {
+    global.fetch = realFetch;
+  }
+  assert.deepEqual(JSON.parse(sent.body), { content: "second" });
+});
+
 test("writes carry the board header", async () => {
   _resetSaveState();
   const realFetch = global.fetch;

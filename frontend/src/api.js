@@ -36,11 +36,18 @@ const notify = () => {
 
 const isRetryable = (err) => !err.status || err.status >= 500;
 
+const isProjectFieldPatch = (method, path) => method === "PUT" && /^\/projects\/[^/]+$/.test(path);
+
 const remember = (method, path, body) => {
-  // A later PUT to the same path replaces the earlier one: replaying an old
-  // body over a newer save would undo the newer save.
+  // Project PUTs are field patches, so two offline edits must be combined.
+  // Full-document writes (notes, settings, event rows) still replace the
+  // earlier body: replaying an old document over a newer one would undo it.
   const key = method === "PUT" ? `PUT ${path}` : `${method} ${path} #${++state.seq}`;
-  state.queue.set(key, { key, method, path, body });
+  const previous = state.queue.get(key);
+  const queuedBody = previous && isProjectFieldPatch(method, path)
+    ? { ...previous.body, ...body }
+    : body;
+  state.queue.set(key, { key, method, path, body: queuedBody });
   notify();
 };
 
