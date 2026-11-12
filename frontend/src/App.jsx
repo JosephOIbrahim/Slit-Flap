@@ -298,11 +298,12 @@ export default function Departures() {
       items.push({ type: "project", time: p.todayTime, data: p, sortKey: timeToMinutes(p.todayTime) });
     });
 
-    events.forEach((ev) => {
+    events.filter((ev) => !ev.date || ev.date === today).forEach((ev) => {
       items.push({ type: "event", time: ev.time, data: ev, sortKey: timeToMinutes(ev.time) });
     });
 
-    MOCK_EMAILS.forEach((em) => {
+    // Demo-only: the mock inbox belongs to the seed board, not a real one.
+    if (settings.demo) MOCK_EMAILS.forEach((em) => {
       items.push({ type: "email", time: em.time, data: em, sortKey: timeToMinutes(em.time) });
     });
 
@@ -511,7 +512,7 @@ export default function Departures() {
               if (item.type === "now") return <NowLine key="now" />;
               if (item.type === "event") return (
                 <div key={item.data.id} className="arrive" style={{ animationDelay: `${i * interval}s`, padding: "0 12px" }}>
-                  <EventRow event={item.data} open={openEventId === item.data.id}
+                  <EventRow event={item.data} projects={projects} open={openEventId === item.data.id}
                     onToggle={() => setOpenEventId(openEventId === item.data.id ? null : item.data.id)}
                     onUpdate={updateEvent} onDelete={removeEvent} readOnly={isViewer} />
                 </div>

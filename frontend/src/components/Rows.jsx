@@ -3,10 +3,11 @@ import { ACCENT, MONO, RED, G1, G2, G3, G4, G5, G6, sys, inp } from "../theme";
 
 // ─── EVENT EDIT PANEL ────────────────────────────────────────
 
-function EventEditPanel({ event, onUpdate, onDelete }) {
+function EventEditPanel({ event, projects, onUpdate, onDelete }) {
   const [draft, setDraft] = useState({
     time: event.time || "",
     endTime: event.endTime || event.end || "",
+    date: event.date || "",
     name: event.name || "",
     linkedProject: event.linkedProject || "",
   });
@@ -19,8 +20,16 @@ function EventEditPanel({ event, onUpdate, onDelete }) {
         <input value={draft.endTime} onChange={e => d("endTime", e.target.value)} onBlur={save} placeholder="END" style={inp} />
         <input value={draft.name} onChange={e => d("name", e.target.value)} onBlur={save} placeholder="Event name" style={inp} />
       </div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <input value={draft.linkedProject} onChange={e => d("linkedProject", e.target.value)} onBlur={save} placeholder="Link to project ID" style={{ ...inp, width: "180px" }} />
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
+        <div style={{ display: "flex", gap: "8px", flex: 1 }}>
+          <input type="date" value={draft.date} onChange={e => d("date", e.target.value)} onBlur={save}
+            title="The day this event happens" style={{ ...inp, width: "140px" }} />
+          <select value={draft.linkedProject} onChange={e => { d("linkedProject", e.target.value); }}
+            onBlur={save} style={{ ...inp, width: "200px" }}>
+            <option value="">— no project —</option>
+            {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </div>
         <button onClick={() => onDelete(event.id)}
           style={{ ...sys("9px", G3), background: "transparent", border: `1px solid ${G4}`, padding: "8px 12px", cursor: "pointer", borderRadius: "4px" }}
           onMouseEnter={e => { e.currentTarget.style.borderColor = RED; e.currentTarget.style.color = RED; }}
@@ -34,7 +43,7 @@ function EventEditPanel({ event, onUpdate, onDelete }) {
 
 // ─── EVENT ROW (TIER 2 — SPEAK) ─────────────────────────────
 
-export function EventRow({ event, open, onToggle, onUpdate, onDelete, readOnly }) {
+export function EventRow({ event, projects = [], open, onToggle, onUpdate, onDelete, readOnly }) {
   const linked = event.linkedProject;
   return (
     <div style={{
@@ -61,7 +70,7 @@ export function EventRow({ event, open, onToggle, onUpdate, onDelete, readOnly }
           <span style={sys("9px", G4, { letterSpacing: "0.06em" })}>{event.endTime || event.end}</span>
         </div>
       </div>
-      {open && !readOnly && <EventEditPanel event={event} onUpdate={onUpdate} onDelete={onDelete} />}
+      {open && !readOnly && <EventEditPanel event={event} projects={projects} onUpdate={onUpdate} onDelete={onDelete} />}
     </div>
   );
 }

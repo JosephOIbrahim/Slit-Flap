@@ -98,3 +98,40 @@ def test_a_block_from_before_the_date_column_keeps_its_day(board):
     with closing(sqlite3.connect(db.DB_PATH)) as conn:
         got = conn.execute("SELECT today_date FROM projects WHERE id = 'brand-refresh'").fetchone()[0]
     assert got == date.today().isoformat()
+
+
+def test_events_are_dated_and_old_ones_keep_their_day(board):
+    from datetime import date
+
+    asyncio.run(db.init_db())
+    with closing(sqlite3.connect(db.DB_PATH)) as conn:
+        dates = [row[0] for row in conn.execute("SELECT date FROM events")]
+    assert dates and all(d == date.today().isoformat() for d in dates)
+
+    # A board at schema 2 has events but no date for them.
+    with closing(sqlite3.connect(db.DB_PATH)) as conn:
+        conn.execute("ALTER TABLE events DROP COLUMN date")
+        conn.execute("PRAGMA user_version = 2")
+        conn.commit()
+    asyncio.run(db.init_db())
+    with closing(sqlite3.connect(db.DB_PATH)) as conn:
+        dates = [row[0] for row in conn.execute("SELECT date FROM events")]
+    assert dates and all(d == date.today().isoformat() for d in dates)
+
+
+def test_deleted_demo_events_stay_deleted(board):
+    asyncio.run(db.init_db())
+    with closing(sqlite3.connect(db.DB_PATH)) as conn:
+        conn.execute("DELETE FROM events WHERE id = 'ev1'")
+        conn.commit()
+    asyncio.run(db.init_db())  # the next start must not re-add it
+    with closing(sqlite3.connect(db.DB_PATH)) as conn:
+        ids = {row[0] for row in conn.execute("SELECT id FROM events")}
+    assert "ev1" not in ids
+
+
+def test_demo_mode_is_true_only_for_the_seed_board(board):
+    asyncio.run(db.init_db())
+    assert asyncio.run(db.get_settings())["demo"] is True
+    asyncio.run(db.create_project({"id": "real", "name": "Real"}))
+    assert asyncio.run(db.get_settings())["demo"] is False

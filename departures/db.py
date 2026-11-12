@@ -102,7 +102,7 @@ PROJECTS = _Table(
 
 EVENTS = _Table(
     "events",
-    ["id", "time", "end_time", "name", "source", "linked_project", "created_at", "updated_at"],
+    ["id", "time", "end_time", "date", "name", "source", "linked_project", "created_at", "updated_at"],
     {"end_time": "endTime", "linked_project": "linkedProject",
      "created_at": "createdAt", "updated_at": "updatedAt"},
 )
@@ -157,6 +157,7 @@ CREATE TABLE IF NOT EXISTS events (
     id TEXT PRIMARY KEY,
     time TEXT NOT NULL,
     end_time TEXT DEFAULT '',
+    date TEXT DEFAULT '',
     name TEXT NOT NULL,
     source TEXT DEFAULT '',
     linked_project TEXT DEFAULT '',
@@ -217,15 +218,25 @@ _SEED_AGES = {
 _SEED_SETTINGS = [("zip", ""), ("fontSize", "104"), ("alignment", "left")]
 
 
-async def _seed_events_settings(db) -> None:
-    now_str = _now()
-    for eid, time, end_time, name, source, linked in SEED_EVENTS:
-        await db.execute(
-            "INSERT OR IGNORE INTO events (id, time, end_time, name, source, linked_project, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (eid, time, end_time, name, source, linked, now_str, now_str),
-        )
+async def _seed_settings(db) -> None:
     for key, val in _SEED_SETTINGS:
         await db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, val))
+
+
+async def _seed_events(db) -> None:
+    """The demo calendar, dated today; only a fresh board or `seed` gets it."""
+    now_str = _now()
+    today = date.today().isoformat()
+    for eid, time, end_time, name, source, linked in SEED_EVENTS:
+        await db.execute(
+            "INSERT OR IGNORE INTO events (id, time, end_time, date, name, source, linked_project, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (eid, time, end_time, today, name, source, linked, now_str, now_str),
+        )
+
+
+async def _seed_events_settings(db) -> None:
+    await _seed_events(db)
+    await _seed_settings(db)
 
 
 async def _insert_seeds(db) -> None:
@@ -928,9 +939,19 @@ async def _add_today_date(db) -> None:
     )
 
 
+async def _add_event_date(db) -> None:
+    """Date each event, so it shows on its own day. Events already on the
+    board are dated today, which is where they were showing."""
+    cols = {row[1] for row in await (await db.execute("PRAGMA table_info(events)")).fetchall()}
+    if "date" not in cols:
+        await db.execute("ALTER TABLE events ADD COLUMN date TEXT DEFAULT ''")
+    await db.execute("UPDATE events SET date = date('now', 'localtime') WHERE date IS NULL OR date = ''")
+
+
 _MIGRATIONS = [
     (1, "projects.sort_order", _add_sort_order),
     (2, "projects.today_date", _add_today_date),
+    (3, "events.date", _add_event_date),
 ]
 SCHEMA_VERSION = _MIGRATIONS[-1][0]
 
@@ -961,7 +982,7 @@ async def init_db() -> None:
         if row[0] == 0:
             await _insert_seeds(db)
         else:
-            await _seed_events_settings(db)
+            await _seed_settings(db)  # defaults only; deleted demo events stay deleted
             await db.commit()
 
 
@@ -1207,7 +1228,7 @@ async def list_events() -> list[dict]:
 
 
 async def create_event(data: dict) -> dict:
-    """Create event. Returns {id}. Accepts: time, endTime, name, source, linkedProject."""
+    """Create event. Accepts: time, endTime, date, name, source, linkedProject."""
     now = _now()
     eid = data.get("id") or _new_id()
     async with _db() as db:
@@ -1215,6 +1236,7 @@ async def create_event(data: dict) -> dict:
             "id": eid,
             "time": data.get("time", ""),
             "end_time": data.get("endTime", ""),
+            "date": data.get("date", ""),
             "name": data.get("name", ""),
             "source": data.get("source", ""),
             "linked_project": data.get("linkedProject", ""),
@@ -1222,7 +1244,8 @@ async def create_event(data: dict) -> dict:
             "updated_at": now,
         })
         await db.commit()
-        return {"id": eid}
+        row = await (await db.execute("SELECT * FROM events WHERE id = ?", (eid,))).fetchone()
+        return EVENTS.row_out(row)
 
 
 async def update_event(eid: str, data: dict) -> dict:
@@ -1244,17 +1267,22 @@ async def delete_event(eid: str) -> dict:
 # ── Settings ──────────────────────────────────────────────────────
 
 async def get_settings() -> dict:
-    """Return all settings as {key: value} dict."""
+    """All settings, plus `demo`: true while the board is exactly the seed
+    projects, so demo-only content (mock emails) can show there and nowhere else."""
     async with _db() as db:
-        cursor = await db.execute("SELECT key, value FROM settings")
-        rows = await cursor.fetchall()
-        return {r["key"]: r["value"] for r in rows}
+        rows = await (await db.execute("SELECT key, value FROM settings")).fetchall()
+        ids = {r["id"] for r in await (await db.execute("SELECT id FROM projects")).fetchall()}
+    settings = {r["key"]: r["value"] for r in rows}
+    settings["demo"] = ids == {seed[0] for seed in SEEDS}
+    return settings
 
 
 async def update_settings(data: dict) -> dict:
     """Update settings from partial dict. Returns full settings."""
     async with _db() as db:
         for key, value in data.items():
+            if key == "demo":  # computed, not a stored setting
+                continue
             await db.execute(
                 "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
                 (key, str(value)),

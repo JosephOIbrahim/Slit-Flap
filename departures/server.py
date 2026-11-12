@@ -286,6 +286,7 @@ async def list_events():
 @app.post("/api/events")
 async def create_event(request: Request):
     body = await request.json()
+    body.setdefault("date", date.today().isoformat())  # a new event is for today unless dated
     return await db.create_event(body)
 
 

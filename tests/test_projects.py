@@ -65,3 +65,13 @@ def test_a_time_block_carries_its_day(owner):
     [block] = [p for p in owner.get("/api/projects").json() if p["id"] == "block"]
     assert block["todayTime"] == "14:30"
     assert block["todayDate"] == date.today().isoformat()
+
+
+def test_a_new_event_is_for_today_unless_dated(owner):
+    from datetime import date
+
+    today = owner.post("/api/events", json={"time": "10:00", "name": "Standup"}).json()
+    assert today["date"] == date.today().isoformat()
+
+    later = owner.post("/api/events", json={"time": "11:00", "name": "Review", "date": "2099-01-01"}).json()
+    assert later["date"] == "2099-01-01"
