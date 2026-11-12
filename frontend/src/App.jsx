@@ -355,6 +355,9 @@ export default function Departures() {
   const filtered = visibleProjects(projects, archivedProjects, filter, today);
   const counts = filterCounts(projects, archivedProjects, today);
   const visibleIds = filtered.map(p => p.id);
+  const startHere = startHereText(nextUp, nextUp && !visibleIds.includes(nextUp.id)
+    ? (isToday ? "in No time blocked" : `in ${nextUp.status}`)
+    : null);
 
   // TODAY view: build unified timeline
   const todayTimeline = (() => {
@@ -407,7 +410,6 @@ export default function Departures() {
   // the plain-words START HERE line under the header.
   const nextUp = nextUpProject(projects);
   const nextUpId = nextUp ? nextUp.id : null;
-  const startHere = startHereText(nextUp);
 
   const intervals = [0.06, 0.12, 0.25, 0.5, 1.0];
   const filters = FILTERS;
@@ -443,7 +445,7 @@ export default function Departures() {
               {unsaved > 0 && (
                 <div role="status"
                   title={`${unsaved} change${unsaved === 1 ? "" : "s"} not saved yet. The board is retrying; keep this tab open until the dot clears.`}
-                  style={{ width: "5px", height: "5px", borderRadius: "50%", background: WHITE, cursor: "default" }} />
+                  style={{ width: "5px", height: "5px", borderRadius: "50%", background: ACCENT, cursor: "default" }} />
               )}
             </div>
             {reloadNotice && (

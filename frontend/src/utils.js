@@ -86,9 +86,10 @@ export function nextUpProject(projects) {
 }
 
 // START HERE, in plain words: the project and the next action.
-export function startHereText(project) {
+export function startHereText(project, where = null) {
   if (!project) return "Nothing is waiting on you. Pick a card, or add one.";
-  return project.next ? `${project.name} — ${project.next}` : project.name;
+  const line = project.next ? `${project.name} — ${project.next}` : project.name;
+  return where ? `${line} · ${where}` : line;  // say where when the filter hides it
 }
 
 // ─── FILTERS ─────────────────────────────────────────────────

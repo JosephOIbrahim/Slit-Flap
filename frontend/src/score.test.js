@@ -96,6 +96,8 @@ test("next up ignores shipped and queued cards", () => {
 test("START HERE names the project and its next action", () => {
   assert.equal(startHereText({ name: "Otto OS", next: "Wire the parser" }), "Otto OS — Wire the parser");
   assert.equal(startHereText({ name: "Otto OS", next: "" }), "Otto OS");
+  assert.equal(startHereText({ name: "Otto OS", next: "Wire the parser" }, "in No time blocked"),
+               "Otto OS — Wire the parser · in No time blocked");
   assert.equal(startHereText(null), "Nothing is waiting on you. Pick a card, or add one.");
 });
 
