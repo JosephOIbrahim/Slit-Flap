@@ -852,6 +852,32 @@ def test_restore_accepts_a_legacy_backup_and_migrates_it(board, tmp_path):
     assert "transitions" in tables
 
 
+@pytest.mark.parametrize("table,create_sql,missing", [
+    ("transitions", "CREATE TABLE transitions (id INTEGER PRIMARY KEY)", "project_id"),
+    ("sessions", """CREATE TABLE sessions (
+        id INTEGER PRIMARY KEY,
+        projects_touched TEXT DEFAULT '[]',
+        summary TEXT DEFAULT ''
+    )""", "started_at"),
+])
+def test_restore_refuses_a_table_without_the_columns_the_board_reads(
+        board, tmp_path, table, create_sql, missing):
+    asyncio.run(db.init_db())
+    backup = db.backup_daily(date.today())
+    malformed = tmp_path / f"malformed-{table}.db"
+    shutil.copyfile(backup, malformed)
+    with closing(sqlite3.connect(malformed)) as conn:
+        conn.execute(f"DROP TABLE {table}")
+        conn.execute(create_sql)
+        conn.commit()
+
+    with pytest.raises(db.RestoreError) as refused:
+        db.stage_restore(malformed)
+    assert f"its {table} table has no" in str(refused.value)
+    assert missing in str(refused.value)
+    assert no_restore_leftovers()
+
+
 def test_restore_checks_the_port_the_board_was_started_on(restore, monkeypatch):
     start_board()
     backup = db.backup_dir() / daily_backups()[0]

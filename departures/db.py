@@ -708,6 +708,7 @@ _BOARD_COLUMNS = {
     "projects": set(PROJECTS.cols) - {"sort_order", "today_date", "archived_at"},
     "logs": {"id", "project_id", "text", "created_at"},
     "notes": {"project_id", "content", "updated_at"},
+    "sessions": {"id", "started_at", "ended_at"},
     "events": set(EVENTS.cols) - {"date"},
     "settings": {"key", "value"},
     "viewers": {"id", "email", "token", "created_at", "last_seen"},
@@ -717,6 +718,7 @@ _MIGRATED_BOARD_COLUMNS = (
     (2, "projects", {"today_date"}),
     (3, "events", {"date"}),
     (4, "projects", {"archived_at"}),
+    (5, "transitions", {"id", "project_id", "from_status", "to_status", "at"}),
     (6, "sessions", {"projects_touched", "summary"}),
 )
 
