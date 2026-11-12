@@ -27,7 +27,7 @@ netsh advfirewall firewall add rule name="Departures" dir=in action=allow protoc
 - `departures-launch.vbs` starts the board silently. Startup errors go to `launcher.log` in the data folder.
 - `departures.bat` runs the copy of DEPARTURES in the repository and keeps a window open if the board fails.
 
-Both pick a Python that can actually run the board; if the first Python on PATH cannot import the server, the launcher falls back to `py -3.12`.
+Both pick a Python that can actually run the board: they try `python`, then `py -3.12`, then `py -3.11`, using the first one that can import the server.
 
 
 ## Build from a clone
