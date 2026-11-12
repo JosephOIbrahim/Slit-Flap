@@ -304,6 +304,14 @@ export default function Departures() {
     setProjects(prev => prev.map(x => x.id === p.id ? { ...p, updatedAt: x.updatedAt } : x));
     scheduleSave(p.id, patch);
   };
+  const appendLog = (id, entry) => {
+    setProjects(prev => prev.map(x => x.id === id
+      ? { ...x, log: [...(x.log || []), entry], lastTouched: entry.at || x.lastTouched }
+      : x));
+    // The log POST touches updatedAt on the server but returns only the entry.
+    // Refetch instead of PUTting the pre-log project back over that version.
+    return api.get('/projects').then(setProjects).catch(onSaveError);
+  };
   const loadArchived = () => api.get('/projects?archived=1').then(setArchivedProjects).catch(() => {});
   useEffect(() => { if (filter === "ARCHIVED") loadArchived(); }, [filter]);
   useEffect(() => () => clearTimeout(undoTimer.current), []);
@@ -451,7 +459,7 @@ export default function Departures() {
   );
 
   const cardProps = (p) => ({
-    project: p, onUpdate: update, onDelete: remove, onRestore: restore,
+    project: p, onUpdate: update, onLog: appendLog, onDelete: remove, onRestore: restore,
     open: openId === p.id,
     onToggle: () => setOpenId(openId === p.id ? null : p.id),
     isNextUp: p.id === nextUpId,

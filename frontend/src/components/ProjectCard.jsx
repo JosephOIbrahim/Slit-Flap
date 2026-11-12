@@ -255,7 +255,7 @@ function NotesBack({ project, active, onFlip, readOnly }) {
 
 // ─── PROJECT CARD (TIER 1 — SHOUT) ───────────────────────────
 
-export function ProjectCard({ project, onUpdate, onDelete, onRestore, open, onToggle, showTime, isNextUp, flapSize, flapAlign, readOnly }) {
+export function ProjectCard({ project, onUpdate, onLog, onDelete, onRestore, open, onToggle, showTime, isNextUp, flapSize, flapAlign, readOnly }) {
   const shipped = project.status === "SHIPPED";
   const [flipping, setFlipping] = useState(false);
   const [flipped, setFlipped] = useState(false);
@@ -289,13 +289,7 @@ export function ProjectCard({ project, onUpdate, onDelete, onRestore, open, onTo
 
   const addLogEntry = (text) => {
     if (!text.trim()) return;
-    api.post(`/projects/${project.id}/logs`, { text }).then(entry => {
-      onUpdate({
-        ...project,
-        log: [...(project.log || []), entry],
-        lastTouched: new Date().toISOString(),
-      });
-    });
+    api.post(`/projects/${project.id}/logs`, { text }).then(entry => onLog(project.id, entry));
   };
 
   return (
