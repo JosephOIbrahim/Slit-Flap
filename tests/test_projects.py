@@ -49,6 +49,22 @@ def test_a_note_saved_from_a_page_that_is_behind_is_refused(owner):
     assert owner.get("/api/projects/noted/notes").json()["content"] == "second"
 
 
+def test_two_tabs_cannot_both_create_the_same_empty_note(owner):
+    owner.post("/api/projects", json={"id": "empty-note", "name": "Empty Note"})
+    first_tab = owner.get("/api/projects/empty-note/notes").json()
+    second_tab = owner.get("/api/projects/empty-note/notes").json()
+    assert first_tab["updatedAt"] is None and second_tab["updatedAt"] is None
+
+    first = owner.put("/api/projects/empty-note/notes",
+                      json={"content": "first tab", "updatedAt": first_tab["updatedAt"]})
+    second = owner.put("/api/projects/empty-note/notes",
+                       json={"content": "second tab", "updatedAt": second_tab["updatedAt"]})
+
+    assert first.status_code == 200  # both versions were null: creation is allowed
+    assert second.status_code == 409  # that null is stale once the first save exists
+    assert owner.get("/api/projects/empty-note/notes").json()["content"] == "first tab"
+
+
 def test_the_board_reports_its_version(owner):
     from departures import __version__
 
