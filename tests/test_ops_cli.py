@@ -9,7 +9,7 @@ from departures import cli as cli_module
 from departures import db
 from departures.cli import cli
 
-from .test_backups import daily_backups, ids_in, start_board
+from .test_backups import daily_backups, ids_in, no_restore_leftovers, start_board
 
 
 @pytest.fixture
@@ -46,3 +46,26 @@ def test_manual_restore_steps_respect_a_relocated_data_folder():
     assert "%USERPROFILE%\\.departures" in steps
     assert "$DEPARTURES_HOME" in steps
     assert "~/.departures" in steps
+
+
+def test_an_unreadable_backup_is_a_clean_error_and_changes_nothing(
+        ops_restore, monkeypatch):
+    start_board()
+    backup = db.backup_dir() / daily_backups()[0]
+    before = ids_in(db.DB_PATH)
+    real_copyfile = db.shutil.copyfile
+
+    def unreadable(source, destination):
+        if Path(source) == backup:
+            raise PermissionError(13, "Access is denied", str(source))
+        return real_copyfile(source, destination)
+
+    monkeypatch.setattr(db.shutil, "copyfile", unreadable)
+    result = ops_restore(backup, "--yes")
+
+    assert result.exit_code != 0
+    assert isinstance(result.exception, SystemExit)
+    assert "Nothing was changed" in result.output
+    assert "Traceback" not in result.output
+    assert ids_in(db.DB_PATH) == before
+    assert no_restore_leftovers()

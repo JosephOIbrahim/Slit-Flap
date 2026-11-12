@@ -769,11 +769,11 @@ def stage_restore(backup: Path) -> tuple[Path, dict[str, int | None]]:
         raise RestoreError(f"There's no backup file at {backup}")
     if DB_PATH.exists() and backup.resolve() == DB_PATH.resolve():
         raise RestoreError("That's the live board itself, not a backup.")
-    DB_DIR.mkdir(parents=True, exist_ok=True)
-    _sweep_restore_tmp()  # private copies a killed restore left behind
-    _sweep_partials()     # half-written backups a killed backup left behind
     staged = _staging_path()
     try:
+        DB_DIR.mkdir(parents=True, exist_ok=True)
+        _sweep_restore_tmp()  # private copies a killed restore left behind
+        _sweep_partials()     # half-written backups a killed backup left behind
         with open(staged, "xb"):  # created exclusively: the name is this restore's
             pass
         shutil.copyfile(backup, staged)
@@ -794,6 +794,14 @@ def stage_restore(backup: Path) -> tuple[Path, dict[str, int | None]]:
     except sqlite3.DatabaseError as exc:
         _remove_board_files(staged)
         raise RestoreError(f"That file isn't a readable board ({exc}).") from exc
+    except OSError as exc:
+        try:
+            _remove_board_files(staged)
+        except OSError:
+            pass  # the staging error still needs a clean operator-facing report
+        raise RestoreError(
+            f"Couldn't read or stage that backup ({exc}). Nothing was changed."
+        ) from exc
     except BaseException:
         _remove_board_files(staged)
         raise
