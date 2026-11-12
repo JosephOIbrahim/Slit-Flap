@@ -16,7 +16,9 @@ ROOT = Path(__file__).resolve().parent.parent
 def free_port(exclude=()):
     """An unused port from the range reserved for these integration tests."""
     excluded = set(exclude)
-    for port in range(49800, 49900):
+    start = 49800 + (os.getpid() * 37) % 100
+    ports = range(start, 49900)
+    for port in (*ports, *range(49800, start)):
         if port in excluded:
             continue
         with socket.socket() as sock:
