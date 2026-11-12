@@ -3,6 +3,7 @@ import { ACCENT, RED, RISK, MONO, G1, G2, G3, G4, G5, G6, sys, inp, STATUSES, TR
 import { relTime, statusColor, departure, localDate } from "../utils";
 import { SplitFlapName } from "./SplitFlap";
 import { api } from "../api";
+import { canSaveNotes, plainTextFrom } from "../notesEdit";
 
 // ─── PROGRESS (mile markers) ─────────────────────────────────
 
@@ -117,36 +118,38 @@ function LogPanel({ log, onAdd, readOnly }) {
 
 function NotesBack({ project, active, onFlip, readOnly }) {
   const ref = useRef(null);
-  const loaded = useRef(false);
+  const loadedOk = useRef(false);
   const timer = useRef(null);
   const stamp = useRef(null);       // the note version the editor loaded
   const noticeTimer = useRef(null);
+  const saveRef = useRef(null);
   const [savedAt, setSavedAt] = useState(null);
   const [stale, setStale] = useState(false);
+  const [loadState, setLoadState] = useState("loading");  // loading | ready | error
 
-  const loadNotes = () => api.get(`/projects/${project.id}/notes`).then(n => {
-    if (ref.current) ref.current.innerHTML = n.content || "";
-    stamp.current = n.updatedAt || null;
-    if (n.updatedAt) setSavedAt(n.updatedAt);
-  }).catch(() => {});
+  const loadNotes = () => {
+    setLoadState("loading");
+    return api.get(`/projects/${project.id}/notes`).then(n => {
+      if (ref.current) ref.current.innerHTML = n.content || "";
+      stamp.current = n.updatedAt || null;
+      if (n.updatedAt) setSavedAt(n.updatedAt);
+      loadedOk.current = true;
+      setLoadState("ready");
+    }).catch(() => setLoadState("error"));  // never leave an empty editor able to save
+  };
 
-  // Lazy-load notes the first time the card flips
+  // Lazy-load the first time the card flips; a failed load retries next time.
   useEffect(() => {
-    if (active && !loaded.current) {
-      loaded.current = true;
-      loadNotes();
-    }
+    if (active && !loadedOk.current) loadNotes();
   }, [active, project.id]);
 
-  useEffect(() => () => {
-    clearTimeout(timer.current);
-    clearTimeout(noticeTimer.current);
-  }, []);
-
-  const save = () => {
-    if (readOnly || !ref.current) return;
-    api.put(`/projects/${project.id}/notes`, { content: ref.current.innerHTML, updatedAt: stamp.current })
-      .then(n => { setSavedAt(n.updatedAt); stamp.current = n.updatedAt; })
+  const save = ({ keepalive = false } = {}) => {
+    if (!canSaveNotes(loadState, readOnly) || !ref.current) return;
+    const body = { content: ref.current.innerHTML, updatedAt: stamp.current };
+    const call = keepalive
+      ? api.putKeepalive(`/projects/${project.id}/notes`, body)
+      : api.put(`/projects/${project.id}/notes`, body);
+    call.then(n => { setSavedAt(n.updatedAt); stamp.current = n.updatedAt; })
       .catch(err => {
         if (err && err.status === 409) {  // a restore (or another page) changed the note
           loadNotes();
@@ -156,10 +159,38 @@ function NotesBack({ project, active, onFlip, readOnly }) {
         }
       });
   };
+  saveRef.current = save;
+
+  // A thought typed in the last second before the tab hides must still go.
+  useEffect(() => {
+    const flush = () => {
+      if (!timer.current) return;
+      clearTimeout(timer.current);
+      timer.current = null;
+      if (saveRef.current) saveRef.current({ keepalive: true });
+    };
+    const onVisibility = () => { if (document.visibilityState === "hidden") flush(); };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pagehide", flush);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pagehide", flush);
+      clearTimeout(timer.current);
+      clearTimeout(noticeTimer.current);
+      flush();
+    };
+  }, []);
 
   const onInput = () => {
     clearTimeout(timer.current);
-    timer.current = setTimeout(save, 1000);
+    timer.current = setTimeout(() => { timer.current = null; saveRef.current?.(); }, 1000);
+  };
+
+  const onPaste = (e) => {
+    e.preventDefault();
+    const text = plainTextFrom(e.clipboardData || window.clipboardData);
+    document.execCommand("insertText", false, text);
+    onInput();
   };
 
   return (
@@ -188,16 +219,27 @@ function NotesBack({ project, active, onFlip, readOnly }) {
           NOTES RELOADED · THIS PAGE WAS BEHIND
         </span>
       )}
-      <div ref={ref} contentEditable={!readOnly} suppressContentEditableWarning
-        onInput={onInput} onBlur={save}
+      <div ref={ref} contentEditable={!readOnly && loadState === "ready"} suppressContentEditableWarning
+        onInput={onInput} onBlur={() => save()} onPaste={onPaste}
         style={{
           flex: 1, overflowY: "auto", outline: "none",
           fontFamily: MONO, fontSize: "12px", color: G1,
           lineHeight: 1.7, letterSpacing: "0.02em", caretColor: ACCENT,
         }} />
-      <span style={sys("8px", G4)}>
-        {readOnly ? "READ ONLY" : savedAt ? `SAVED ${relTime(savedAt).toUpperCase()}` : "AUTO-SAVES · CTRL+B BOLD · CTRL+I ITALIC"}
-      </span>
+      {loadState === "error" ? (
+        <button onClick={loadNotes} style={{
+          ...sys("8px", ACCENT), background: "transparent", border: `1px solid ${G4}`,
+          padding: "6px 8px", borderRadius: "4px", cursor: "pointer", alignSelf: "flex-start",
+          letterSpacing: "0.1em",
+        }}>NOTES UNAVAILABLE · RETRY</button>
+      ) : (
+        <span style={sys("8px", G4)}>
+          {readOnly ? "READ ONLY"
+            : loadState === "loading" ? "LOADING NOTES…"
+            : savedAt ? `SAVED ${relTime(savedAt).toUpperCase()}`
+            : "AUTO-SAVES · CTRL+B BOLD · CTRL+I ITALIC"}
+        </span>
+      )}
     </div>
   );
 }
