@@ -7,7 +7,6 @@ import os
 import secrets
 import shutil
 import sqlite3
-import tempfile
 import time
 import uuid
 from contextlib import asynccontextmanager, closing, contextmanager
@@ -619,9 +618,9 @@ _COUNTED_TABLES = ("projects", "notes", "logs", "events", "viewers")
 def board_counts(path: Path | None = None) -> dict[str, int | None]:
     """What a board holds, by table; empty if the file doesn't exist.
 
-    Reads the main file only and never writes to the board (not even a
-    pending -wal), so it's safe on a damaged board: None marks a table it
-    couldn't read.
+    Reads without writing to the board (not even folding a pending -wal), so
+    it's safe on a damaged board: None marks a table it couldn't read. A
+    network share is counted through a private copy that includes its -wal.
     """
     path = Path(path or DB_PATH)
     if not path.exists():
@@ -639,10 +638,7 @@ def board_counts(path: Path | None = None) -> dict[str, int | None]:
 
 def _counts_from_copy(path: Path) -> dict[str, int | None]:
     try:
-        with tempfile.TemporaryDirectory(prefix="departures-counts-",
-                                         ignore_cleanup_errors=True) as tmp:
-            copy = Path(tmp) / "board.db"
-            shutil.copyfile(path, copy)
+        with _private_board(path) as copy:
             with closing(sqlite3.connect(copy)) as conn:
                 return _count_tables(conn)
     except OSError:

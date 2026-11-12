@@ -1165,7 +1165,7 @@ def test_counts_work_for_a_board_on_a_network_share(restore):
     assert result.exception is None or isinstance(result.exception, SystemExit)
 
 
-def test_counts_fall_back_without_touching_the_board(board, monkeypatch):
+def test_counts_fall_back_to_a_wal_aware_private_copy(board, monkeypatch):
     start_board()
     crash_while_writing("INSERT INTO projects (id, name) VALUES ('wal-only', 'In The WAL Only');")
     wal = db.DB_PATH.with_name("departures.db-wal")
@@ -1181,8 +1181,48 @@ def test_counts_fall_back_without_touching_the_board(board, monkeypatch):
     monkeypatch.setattr(sqlite3, "connect", rejects_file_uris)
     counts = db.board_counts()
 
-    assert counts["projects"] == 16  # the main file's count; the -wal is left alone
+    assert counts["projects"] == 17  # the private copy carries the -wal
     assert (db.DB_PATH.read_bytes(), wal.read_bytes()) == files_before  # board untouched
+
+
+def test_a_killed_network_count_read_leaves_no_copy_in_temp(board, tmp_path, monkeypatch):
+    import tempfile
+
+    asyncio.run(db.init_db())
+    asyncio.run(db.add_viewer("viewer@example.com"))
+    pretend_temp = tmp_path / "pretend-temp"
+    pretend_temp.mkdir()
+
+    class KilledBeforeCleanup:
+        def __init__(self, prefix="", ignore_cleanup_errors=False, **_):
+            self.path = pretend_temp / (prefix + "left-behind")
+            self.path.mkdir()
+
+        def __enter__(self):
+            return str(self.path)
+
+        def __exit__(self, *exc):
+            return False  # process death: TemporaryDirectory never cleans up
+
+    real_connect = sqlite3.connect
+
+    def rejects_file_uris(target, *args, **kwargs):
+        if kwargs.get("uri"):
+            raise sqlite3.OperationalError("invalid uri authority: server")
+        return real_connect(target, *args, **kwargs)
+
+    monkeypatch.setattr(tempfile, "TemporaryDirectory", KilledBeforeCleanup)
+    monkeypatch.setattr(sqlite3, "connect", rejects_file_uris)
+    assert db.board_counts()["viewers"] == 1
+    assert list(pretend_temp.iterdir()) == []
+
+    old = db.restore_tmp_dir() / "board-counts-old"
+    old.mkdir(parents=True)
+    (old / "board.db").write_bytes(b"a board copy a killed count read left")
+    stamp = time.time() - 120
+    os.utime(old, (stamp, stamp))
+    db._sweep_restore_tmp()
+    assert not old.exists()
 
 
 def test_a_work_session_does_not_count_as_a_board_change(board):
