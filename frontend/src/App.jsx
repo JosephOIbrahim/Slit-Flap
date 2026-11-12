@@ -135,15 +135,13 @@ export default function Departures() {
 
   // ─── Fonts + global styles ─────────────────────────────────
   useEffect(() => {
-    const l = document.createElement("link");
-    l.href = "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&display=swap";
-    l.rel = "stylesheet"; document.head.appendChild(l);
-
+    // JetBrains Mono is bundled and declared in index.html. Disket Mono stays
+    // on its licensed CDN: its EULA allows web use but not redistribution.
     const l2 = document.createElement("link");
     l2.href = "https://db.onlinewebfonts.com/c/3284c3a32cf946466fb963369b3c5b2d?family=Disket+Mono";
     l2.rel = "stylesheet"; document.head.appendChild(l2);
 
-    return () => { document.head.removeChild(l); document.head.removeChild(l2); };
+    return () => { document.head.removeChild(l2); };
   }, []);
 
   useEffect(() => {

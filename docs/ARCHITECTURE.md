@@ -158,7 +158,7 @@ Studio restraint, applied literally:
 - **Motion is punctuation.** A card flips when something changed; nothing else moves.
 - **The answer first.** Headings state the point; paragraphs hold one idea; a scanning reader can stop anywhere and still know where they are.
 
-Fonts: Disket Mono for identity, JetBrains Mono for everything else. Six greys: `#999`, `#666`, `#444`, `#2a2a2a`, `#1a1a1a`, `#111`.
+Fonts: Disket Mono for identity (licensed CDN; its EULA permits web use but not redistribution, so it is not bundled) and JetBrains Mono for everything else (bundled woff2, OFL, works offline). Six greys: `#999`, `#666`, `#444`, `#2a2a2a`, `#1a1a1a`, `#111`.
 
 ## Tests and build
 

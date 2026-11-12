@@ -373,8 +373,8 @@ their own machine only; viewers cannot. There are no accounts or passwords.
 |-------|------|-----|
 | Frontend | React 18 + Vite | Fast build, hot reload, artifact is already React |
 | Styling | Inline styles | Current artifact uses them. Don't migrate unless painful. |
-| Display font | Disket Mono (CDN) | Geometric monospace. Train station DNA. |
-| System font | JetBrains Mono (Google Fonts) | Clean, readable, monospace utility. |
+| Display font | Disket Mono (licensed CDN; not redistributable) | Geometric monospace. Train station DNA. |
+| System font | JetBrains Mono (bundled woff2, OFL) | Clean, readable, monospace utility; renders offline. |
 | Backend | FastAPI + uvicorn | Async, fast, minimal boilerplate. |
 | Database | SQLite (aiosqlite) | Zero config. File-based. Portable. |
 | CLI | click or typer | Simple arg parsing. |
